@@ -34,11 +34,15 @@ func NewNodeMapNode(id string) *NodeMapNode {
 	}
 }
 
+// IsReferencedOnce helps to solve https://github.com/json-ld/json-ld.org/issues/357
+// by identifying nodes with just one reference.
+func IsReferencedOnce(node *NodeMapNode, referencedOnce map[string]*UsagesNode) bool {
+	referencedOnceUsage, present := referencedOnce[node.Values["@id"].(string)]
+	return present && referencedOnceUsage != nil
+}
+
 // IsWellFormedListNode is a helper function for 4.3.3
 func (nmn *NodeMapNode) IsWellFormedListNode() bool {
-	if len(nmn.usages) != 1 {
-		return false
-	}
 	keys := 0
 	v, containsRdfFirst := nmn.Values[RDFFirst]
 	if containsRdfFirst {
@@ -92,6 +96,7 @@ func (api *JsonLdApi) FromRDF(dataset *RDFDataset, opts *JsonLdOptions) ([]inter
 	// 2)
 	graphMap := make(map[string]map[string]*NodeMapNode)
 	graphMap["@default"] = defaultGraph
+	referencedOnceMap := make(map[string]*UsagesNode)
 
 	// 3/3.1)
 	for name, graph := range dataset.Graphs {
@@ -140,14 +145,17 @@ func (api *JsonLdApi) FromRDF(dataset *RDFDataset, opts *JsonLdOptions) ([]inter
 
 			// 3.5.8)
 			if IsBlankNode(object) || IsIRI(object) {
-				// Note: this code doesn't support fromRDF #t0020-#t0022
-				// See https://github.com/json-ld/json-ld.org/issues/357 for details:
-				// JSON-LD algorithm needs to be updated. This was done in PyLD but not in Java implementation
-				// as of 2015-03-08.
-
-				// 3.5.8.1-3)
-				n := nodeMap[object.GetValue()]
-				n.usages = append(n.usages, NewUsagesNode(node, predicate, value))
+				// track rdf:nil uniquely per graph
+				if object.GetValue() == RDFNil {
+					// 3.5.8.1-3)
+					n := nodeMap[object.GetValue()]
+					n.usages = append(n.usages, NewUsagesNode(node, predicate, value))
+				} else if _, present := referencedOnceMap[object.GetValue()]; present {
+					referencedOnceMap[object.GetValue()] = nil
+				} else {
+					// track single reference
+					referencedOnceMap[object.GetValue()] = NewUsagesNode(node, predicate, value)
+				}
 			}
 		}
 	}
@@ -169,13 +177,13 @@ func (api *JsonLdApi) FromRDF(dataset *RDFDataset, opts *JsonLdOptions) ([]inter
 			list := make([]interface{}, 0)
 			listNodes := make([]string, 0)
 			// 4.3.3)
-			for property == RDFRest && node.IsWellFormedListNode() {
+			for property == RDFRest && IsReferencedOnce(node, referencedOnceMap) && node.IsWellFormedListNode() {
 				// 4.3.3.1)
 				list = append(list, node.Values[RDFFirst].([]interface{})[0])
 				// 4.3.3.2)
 				listNodes = append(listNodes, node.Values["@id"].(string))
 				// 4.3.3.3)
-				nodeUsage := node.usages[0]
+				nodeUsage := referencedOnceMap[node.Values["@id"].(string)]
 				// 4.3.3.4)
 				node = nodeUsage.node
 				property = nodeUsage.property
@@ -203,10 +211,10 @@ func (api *JsonLdApi) FromRDF(dataset *RDFDataset, opts *JsonLdOptions) ([]inter
 			// 4.3.5)
 			delete(head, "@id")
 			// 4.3.6)
+			// reverse the list
 			for i, j := 0, len(list)-1; i < j; i, j = i+1, j-1 {
 				list[i], list[j] = list[j], list[i]
 			}
-			//Collections.reverse(list);
 			// 4.3.7)
 			head["@list"] = list
 			// 4.3.8)
