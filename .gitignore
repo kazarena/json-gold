@@ -22,3 +22,9 @@ _testmain.go
 *.exe
 *.test
 *.prof
+
+# For Mac heads
+.DS_Store
+
+# ignore the EARL report
+earl.jsonld
