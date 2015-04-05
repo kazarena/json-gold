@@ -105,6 +105,9 @@ func (dl *DefaultDocumentLoader) LoadDocument(u string) (*RemoteDocument, error)
 	var document interface{}
 	if len(documentBody) > 0 {
 		err = json.Unmarshal(documentBody, &document)
+		if err != nil {
+			return nil, NewJsonLdError(LoadingDocumentFailed, err)
+		}
 	} else {
 		document = ""
 	}
