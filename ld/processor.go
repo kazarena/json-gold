@@ -409,8 +409,12 @@ func (jldp *JsonLdProcessor) ToRDF(input interface{}, opts *JsonLdOptions) (inte
 // Normalize performs RDF dataset normalization on the given JSON-LD input.
 // The output is an RDF dataset unless the 'format' option is used.
 func (jldp *JsonLdProcessor) Normalize(input interface{}, opts *JsonLdOptions) (interface{}, error) {
+
 	toRDFOpts := NewJsonLdOptions(opts.Base)
 	toRDFOpts.Format = ""
+	// it's important to pass the original DocumentLoader. The default one will be used otherwise!
+	toRDFOpts.DocumentLoader = opts.DocumentLoader
+
 	datasetObj, err := jldp.ToRDF(input, toRDFOpts)
 	if err != nil {
 		return nil, err

@@ -171,3 +171,61 @@ func ParseLinkHeader(header string) map[string][]map[string]string {
 	}
 	return rval
 }
+
+// CachingDocumentLoader is an overlay on top of DocumentLoader instance
+// which allows caching documents as soon as they get retrieved
+// from the underlying loader. You may also preload it with documents -
+// this is useful for testing.
+type CachingDocumentLoader struct {
+	nextLoader DocumentLoader
+	cache      map[string]*RemoteDocument
+}
+
+// NewCachingDocumentLoader creates a new instance of CachingDocumentLoader.
+func NewCachingDocumentLoader(nextLoader DocumentLoader) *CachingDocumentLoader {
+	rval := &CachingDocumentLoader{
+		nextLoader: nextLoader,
+		cache:      make(map[string]*RemoteDocument),
+	}
+
+	return rval
+}
+
+// LoadDocument returns a RemoteDocument containing the contents of the JSON resource
+// from the given URL.
+func (cdl *CachingDocumentLoader) LoadDocument(u string) (*RemoteDocument, error) {
+	if doc, cached := cdl.cache[u]; cached {
+		return doc, nil
+	} else {
+		doc, err := cdl.nextLoader.LoadDocument(u)
+		if err != nil {
+			return nil, err
+		}
+		cdl.cache[u] = doc
+		return doc, nil
+	}
+}
+
+// AddDocument populates the cache with the given document (doc) for the provided URL (u).
+func (cdl *CachingDocumentLoader) AddDocument(u string, doc interface{}) {
+	cdl.cache[u] = &RemoteDocument{DocumentURL: u, Document: doc, ContextURL: ""}
+}
+
+// PreloadWithMapping populates the cache with a number of documents which may be loaded
+// from location different from the original URL (most importantly, from local files).
+//
+// Example:
+//     l.PreloadWithMapping(map[string]string{
+//         "http://www.example.com/context.json": "/home/me/cache/example_com_context.json",
+//     })
+//
+func (cdl *CachingDocumentLoader) PreloadWithMapping(urlMap map[string]string) error {
+	for srcURL, mappedURL := range urlMap {
+		doc, err := cdl.nextLoader.LoadDocument(mappedURL)
+		if err != nil {
+			return err
+		}
+		cdl.cache[srcURL] = doc
+	}
+	return nil
+}

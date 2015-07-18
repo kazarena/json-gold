@@ -28,3 +28,15 @@ func TestParseLinkHeader(t *testing.T) {
 		rval,
 	)
 }
+
+func TestCachingDocumentLoaderLoadDocument(t *testing.T) {
+	cl := NewCachingDocumentLoader(NewDefaultDocumentLoader(nil))
+
+	cl.PreloadWithMapping(map[string]string{
+		"http://www.example.com/expand-0002-in.jsonld": "testdata/expand-0002-in.jsonld",
+	})
+
+	rd, _ := cl.LoadDocument("http://www.example.com/expand-0002-in.jsonld")
+
+	assert.Equal(t, "t1", rd.Document.(map[string]interface{})["@type"])
+}
