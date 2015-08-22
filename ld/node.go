@@ -2,6 +2,7 @@ package ld
 
 import (
 	"fmt"
+	"encoding/json"
 	"math"
 	"regexp"
 	"strconv"
@@ -224,6 +225,27 @@ func objectToRDF(item interface{}) Node {
 		booleanVal, isBool := value.(bool)
 		floatVal, isFloat := value.(float64)
 		isInteger := isFloat && floatVal == float64(int64(floatVal))
+
+		if !isBool && !isFloat {
+			// if document was created using a standard JSON decoder from json package
+			// we need to be careful with float and integer representations.
+			// If the client code sets UseNumber() property of json.Decoder
+			// (see https://golang.org/pkg/encoding/json/#Decoder.UseNumber )
+			// the logic above for discovering floats and integers will fail
+			// because they would be represented as json.Number and not float64.
+			// The code below takes care of it so it doesn't matter
+			// how the document was decoded from JSON.
+			if number, isNumber := value.(json.Number); isNumber {
+				var err error
+				floatVal, err = number.Float64()
+				if err != nil {
+					_, err = number.Int64()
+					isInteger = (err == nil)
+				} else {
+					isFloat = true
+				}
+			}
+		}
 
 		datatypeStr, _ := datatype.(string)
 		if isBool || isFloat {
