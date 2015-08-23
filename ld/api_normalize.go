@@ -233,8 +233,6 @@ func (nu *NormalizeUtils) HashBlankNodes(unnamed []string) (interface{}, error) 
 			unique[hash] = bnode
 		}
 	}
-
-	return "", nil
 }
 
 // HashResult
