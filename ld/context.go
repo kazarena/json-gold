@@ -1045,16 +1045,19 @@ func (c *Context) Serialize() map[string]interface{} {
 		typeMappingVal, hasType := definition["@type"]
 		reverseVal, hasReverse := definition["@reverse"]
 		if !hasLang && !hasContainer && !hasType && (!hasReverse || reverseVal == false) {
+			var cid interface{}
 			id, hasId := definition["@id"]
 			if !hasId {
-				id = ""
-			}
-			cid := c.CompactIri(id.(string), nil, false, false)
-			if term == cid {
-				ctx[term] = definition["@id"]
+				cid = nil
 			} else {
-				ctx[term] = cid
+				cid = c.CompactIri(id.(string), nil, false, false)
+				if term == cid {
+					ctx[term] = definition["@id"]
+				} else {
+					ctx[term] = cid
+				}
 			}
+			ctx[term] = cid
 		} else {
 			defn := make(map[string]interface{})
 			cid := c.CompactIri(definition["@id"].(string), nil, false, false)
