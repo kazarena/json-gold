@@ -371,7 +371,7 @@ func (c *Context) createTermDefinition(context map[string]interface{}, term stri
 		// 14)
 	} else if colIndex := strings.Index(term, ":"); colIndex >= 0 {
 		prefix := term[0:colIndex]
-		suffix := term[colIndex+1 : len(term)]
+		suffix := term[colIndex+1:]
 		if _, containsPrefix := context[prefix]; containsPrefix {
 			if err := c.createTermDefinition(context, prefix, defined); err != nil {
 				return err
@@ -457,7 +457,7 @@ func (c *Context) ExpandIri(value string, relative bool, vocab bool, context map
 	if colIndex >= 0 {
 		// 4.1)
 		prefix := value[0:colIndex]
-		suffix := value[colIndex+1 : len(value)]
+		suffix := value[colIndex+1:]
 		// 4.2)
 		if prefix == "_" || strings.HasPrefix(suffix, "//") {
 			return value, nil
@@ -675,7 +675,7 @@ func (c *Context) CompactIri(iri string, value interface{}, relativeToVocab bool
 		if strings.HasPrefix(iri, vocab) && iri != vocab {
 			// use suffix as relative iri if it is not a term in the
 			// active context
-			suffix := iri[len(vocab):len(iri)]
+			suffix := iri[len(vocab):]
 			if _, hasSuffix := c.termDefinitions[suffix]; !hasSuffix {
 				return suffix
 			}
@@ -705,7 +705,7 @@ func (c *Context) CompactIri(iri string, value interface{}, relativeToVocab bool
 		}
 
 		// 5.3)
-		candidate := term + ":" + iri[len(idStr):len(iri)]
+		candidate := term + ":" + iri[len(idStr):]
 		// 5.4)
 		candidateVal, containsCandidate := c.termDefinitions[candidate]
 		if (compactIRI == "" || CompareShortestLeast(candidate, compactIRI)) &&

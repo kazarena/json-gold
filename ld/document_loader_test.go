@@ -20,7 +20,7 @@ func TestParseLinkHeader(t *testing.T) {
 	assert.Equal(
 		t,
 		map[string][]map[string]string{
-			"http://www.w3.org/ns/json-ld#context": []map[string]string{map[string]string{
+			"http://www.w3.org/ns/json-ld#context": {{
 				"target": "remote-doc-0010-context.jsonld",
 				"rel":    "http://www.w3.org/ns/json-ld#context",
 			}},

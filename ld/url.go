@@ -166,7 +166,7 @@ func RemoveBase(baseobj interface{}, iri string) string {
 	}
 
 	// remove root from IRI and parse remainder
-	rel := ParseURL(iri[len(root):len(iri)])
+	rel := ParseURL(iri[len(root):])
 
 	// remove path segments that match
 	baseSegments := strings.Split(base.NormalizedPath, "/")
@@ -177,10 +177,10 @@ func RemoveBase(baseobj interface{}, iri string) string {
 			break
 		}
 		if len(baseSegments) > 0 {
-			baseSegments = baseSegments[1:len(baseSegments)]
+			baseSegments = baseSegments[1:]
 		}
 		if len(iriSegments) > 0 {
-			iriSegments = iriSegments[1:len(iriSegments)]
+			iriSegments = iriSegments[1:]
 		}
 	}
 

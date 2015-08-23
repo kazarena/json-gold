@@ -1,8 +1,8 @@
 package ld
 
 import (
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"math"
 	"regexp"
 	"strconv"
