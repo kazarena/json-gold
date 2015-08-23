@@ -1037,13 +1037,19 @@ func (c *Context) Serialize() map[string]interface{} {
 		ctx["@vocab"] = vocabVal
 	}
 	for term, definitionVal := range c.termDefinitions {
-		definition := definitionVal.(map[string]interface{})
+		// Note: definitionVal may be nil for terms which are set to be ignored
+		// (see the definition for null value in JSON-LD spec)
+		definition, _ := definitionVal.(map[string]interface{})
 		langVal, hasLang := definition["@language"]
 		containerVal, hasContainer := definition["@container"]
 		typeMappingVal, hasType := definition["@type"]
 		reverseVal, hasReverse := definition["@reverse"]
 		if !hasLang && !hasContainer && !hasType && (!hasReverse || reverseVal == false) {
-			cid := c.CompactIri(definition["@id"].(string), nil, false, false)
+			id, hasId := definition["@id"]
+			if !hasId {
+				id = ""
+			}
+			cid := c.CompactIri(id.(string), nil, false, false)
 			if term == cid {
 				ctx[term] = definition["@id"]
 			} else {
