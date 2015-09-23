@@ -75,7 +75,10 @@ func (api *JsonLdApi) frame(state *FramingContext, nodes map[string]interface{},
 	frame map[string]interface{}, parent interface{}, property string) (interface{}, error) {
 
 	// filter out subjects that match the frame
-	matches, _ := FilterNodes(nodes, frame)
+	matches, err := FilterNodes(nodes, frame)
+	if err != nil {
+		return nil, err
+	}
 
 	// get flags for current frame
 	embedOn := GetFrameFlag(frame, "@embed", state.embed)
@@ -170,7 +173,7 @@ func (api *JsonLdApi) frame(state *FramingContext, nodes map[string]interface{},
 							// recurse into subject reference
 							if IsNodeReference(listitem) {
 								tmp := make(map[string]interface{})
-								itemid := listitem.(map[string]interface{})["id"].(string)
+								itemid := listitem.(map[string]interface{})["@id"].(string)
 								// TODO: nodes may need to be node_map,
 								// which is global
 								tmp[itemid] = nodeMap[itemid]
@@ -402,8 +405,15 @@ func (api *JsonLdApi) embedValues(state *FramingContext, nodeMap map[string]inte
 	// embed subject properties in output
 	objects := element[property].([]interface{})
 	for _, o := range objects {
-		// handle subject reference
-		if IsNodeReference(o) {
+		oMap, isMap := o.(map[string]interface{})
+		_, hasList := oMap["@list"]
+		if isMap && hasList {
+			list := make(map[string]interface{})
+			list["@list"] = make([]interface{}, 0)
+			api.embedValues(state, nodeMap, oMap, "@list", list)
+			addFrameOutput(output, property, list)
+		} else if IsNodeReference(o) {
+			// handle subject reference
 			oMap := o.(map[string]interface{})
 			sid := oMap["@id"].(string)
 
