@@ -63,7 +63,7 @@ func (api *JsonLdApi) Compact(activeCtx *Context, activeProperty string, element
 				if expandedValueStr, isString := expandedValue.(string); isString {
 					compactedValue = activeCtx.CompactIri(expandedValueStr, nil, expandedProperty == "@type", false)
 				} else { // 7.1.2)
-					types := make([]string, 0)
+					types := make([]interface{}, 0)
 					// 7.1.2.2)
 					for _, expandedTypeVal := range expandedValue.([]interface{}) {
 						expandedType := expandedTypeVal.(string)
