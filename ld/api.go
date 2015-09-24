@@ -14,13 +14,15 @@
 
 package ld
 
-// JsonLdApi is the main interface to JSON-LD API.
-// See http://www.w3.org/TR/json-ld-api/ for detailed description of this interface.
+// JsonLdApi exposes internal functions used by JsonLdProcessor.
+// See http://www.w3.org/TR/json-ld-api/ for detailed description of
+// underlying algorithms
+//
+// Warning: using this interface directly is highly discouraged. Please use JsonLdProcessor instead.
 type JsonLdApi struct {
 }
 
-// NewJsonLdApi creates a new instance of JsonLdApi and initialises it
-// with the given JsonLdOptions structure.
+// NewJsonLdApi creates a new instance of JsonLdApi.
 func NewJsonLdApi() *JsonLdApi {
 	return &JsonLdApi{}
 }
