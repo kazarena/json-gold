@@ -30,7 +30,7 @@ func NewContext(values map[string]interface{}, options *JsonLdOptions) *Context 
 		}
 	}
 
-	if options != nil && options.Base != "" {
+	if options != nil {
 		context.values["@base"] = options.Base
 	}
 
