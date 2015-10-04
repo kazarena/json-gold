@@ -37,12 +37,10 @@ type DefaultDocumentLoader struct {
 
 // NewDefaultDocumentLoader creates a new instance of DefaultDocumentLoader
 func NewDefaultDocumentLoader(httpClient *http.Client) *DefaultDocumentLoader {
-	rval := &DefaultDocumentLoader{}
+	rval := &DefaultDocumentLoader{httpClient: httpClient}
 
-	if httpClient != nil {
-		rval.httpClient = httpClient
-	} else {
-		rval.httpClient = &http.Client{}
+	if rval.httpClient == nil {
+		rval.httpClient = http.DefaultClient
 	}
 	return rval
 }
