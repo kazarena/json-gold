@@ -2,6 +2,7 @@ package ld
 
 import (
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 )
@@ -95,6 +96,11 @@ type RDFSerializer interface {
 
 	// Serialize an RDFDataset
 	Serialize(dataset *RDFDataset) (interface{}, error)
+}
+
+// RDFSerializerTo can serialize RDFDatasets into io.Writer.
+type RDFSerializerTo interface {
+	SerializeTo(w io.Writer, dataset *RDFDataset) error
 }
 
 // NewRDFDataset creates a new instance of RDFDataset.

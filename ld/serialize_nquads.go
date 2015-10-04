@@ -1,6 +1,10 @@
 package ld
 
 import (
+	"bufio"
+	"bytes"
+	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strings"
@@ -12,15 +16,11 @@ type NQuadRDFSerializer struct {
 
 // Parse N-Quads from string into an RDFDataset.
 func (s *NQuadRDFSerializer) Parse(input interface{}) (*RDFDataset, error) {
-	if inputStr, isString := input.(string); isString {
-		return ParseNQuads(inputStr)
-	}
-
-	return nil, NewJsonLdError(InvalidInput, "NQuad Parser expected string input")
+	return ParseNQuadsFrom(input)
 }
 
-// Serialize an RDFDataset into N-Quad string.
-func (s *NQuadRDFSerializer) Serialize(dataset *RDFDataset) (interface{}, error) {
+// SerializeTo writes RDFDataset as N-Quad into a writer.
+func (s *NQuadRDFSerializer) SerializeTo(w io.Writer, dataset *RDFDataset) error {
 	quads := make([]string, 0)
 	for graphName, triples := range dataset.Graphs {
 		if graphName == "@default" {
@@ -31,11 +31,21 @@ func (s *NQuadRDFSerializer) Serialize(dataset *RDFDataset) (interface{}, error)
 		}
 	}
 	sort.Strings(quads)
-	rval := ""
 	for _, quad := range quads {
-		rval += quad
+		if _, err := fmt.Fprint(w, quad); err != nil {
+			return NewJsonLdError(IOError, err)
+		}
 	}
-	return rval, nil
+	return nil
+}
+
+// Serialize an RDFDataset into N-Quad string.
+func (s *NQuadRDFSerializer) Serialize(dataset *RDFDataset) (interface{}, error) {
+	buf := bytes.NewBuffer(nil)
+	if err := s.SerializeTo(buf, dataset); err != nil {
+		return nil, err
+	}
+	return buf.String(), nil
 }
 
 func toNQuad(triple *Quad, graphName string, bnode string) string {
@@ -162,30 +172,78 @@ var regexGraph = regexp.MustCompile("(?:\\.|(?:(?:" + iri + "|" + bnode + ")" + 
 
 var regexQuad = regexp.MustCompile("^" + wso + subject + property + object + graph + wso + "$")
 
-// ParseNQuads parses RDF in the form of N-Quads.
-func ParseNQuads(input string) (*RDFDataset, error) {
+type lineScanner interface {
+	Bytes() []byte
+	Scan() bool
+	Err() error
+}
+
+type bytesLineScanner struct {
+	err   error
+	b     []byte
+	token []byte
+	i     int
+}
+
+func (ls *bytesLineScanner) Err() error { return ls.err }
+func (ls *bytesLineScanner) Scan() bool {
+	b, i := ls.b, ls.i
+	if ls.err != nil || i >= len(b) {
+		return false
+	}
+	di, token, err := bufio.ScanLines(b[i:], true)
+	if err != nil {
+		ls.err = err
+		return false
+	}
+	ls.token = token
+	ls.i += di
+	return true
+}
+func (ls *bytesLineScanner) Bytes() []byte {
+	return ls.token
+}
+
+func newScannerFor(o interface{}) (lineScanner, error) {
+	switch inp := o.(type) {
+	case []byte:
+		return &bytesLineScanner{b: inp}, nil
+	case string:
+		return &bytesLineScanner{b: []byte(inp)}, nil
+	case io.Reader:
+		return bufio.NewScanner(inp), nil
+	default:
+		return nil, NewJsonLdError(InvalidInput, "expected []byte, string or io.Reader")
+	}
+}
+
+// ParseNQuadsFrom parses RDF in the form of N-Quads from io.Reader, []byte or string.
+func ParseNQuadsFrom(o interface{}) (*RDFDataset, error) {
 
 	// build RDF dataset
 	dataset := NewRDFDataset()
 
-	// split N-Quad input into lines
-	lines := regexEOLN.Split(input, -1)
+	scanner, err := newScannerFor(o)
+	if err != nil {
+		return nil, err
+	}
+
+	// scan N-Quad input lines
 	lineNumber := 0
-	for _, line := range lines {
+	for scanner.Scan() {
+		line := scanner.Bytes()
 		lineNumber++
 
 		// skip empty lines
-		if regexEmpty.MatchString(line) {
+		if regexEmpty.Match(line) {
 			continue
 		}
 
 		// parse quad
-		var match []string
-		if regexQuad.MatchString(line) {
-			match = regexQuad.FindStringSubmatch(line)
-		} else {
-			return nil, NewJsonLdError(SyntaxError, "Error while parsing N-Quads; invalid quad. line:"+string(lineNumber))
+		if !regexQuad.Match(line) {
+			return nil, NewJsonLdError(SyntaxError, fmt.Errorf("Error while parsing N-Quads; invalid quad. line: %d", lineNumber))
 		}
+		match := regexQuad.FindStringSubmatch(string(line))
 
 		// get subject
 		var subject Node
@@ -246,6 +304,14 @@ func ParseNQuads(input string) (*RDFDataset, error) {
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, NewJsonLdError(IOError, err)
+	}
 
 	return dataset, nil
+}
+
+// ParseNQuads parses RDF in the form of N-Quads.
+func ParseNQuads(input string) (*RDFDataset, error) {
+	return ParseNQuadsFrom(input)
 }

@@ -57,6 +57,7 @@ const (
 	UnknownFormat  ErrorCode = "unknown format"
 	InvalidInput   ErrorCode = "invalid input"
 	ParseError     ErrorCode = "parse error"
+	IOError        ErrorCode = "io error"
 	UnknownError   ErrorCode = "unknown error"
 )
 
