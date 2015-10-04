@@ -66,14 +66,20 @@ func (dl *DefaultDocumentLoader) LoadDocument(u string) (*RemoteDocument, error)
 		return nil, NewJsonLdError(LoadingDocumentFailed, err)
 	}
 
-	var documentBody io.ReadCloser
+	var documentBody io.Reader
 	var finalURL, contextURL string
 
 	protocol := parsedURL.Scheme
 	if protocol != "http" && protocol != "https" {
 		// Can't use the HTTP client for those!
 		finalURL = u
-		documentBody, err = os.Open(u)
+		var file *os.File
+		file, err = os.Open(u)
+		if err != nil {
+			return nil, NewJsonLdError(LoadingDocumentFailed, err)
+		}
+		defer file.Close()
+		documentBody = file
 	} else {
 
 		req, err := http.NewRequest("GET", u, nil)
@@ -112,7 +118,6 @@ func (dl *DefaultDocumentLoader) LoadDocument(u string) (*RemoteDocument, error)
 	if err != nil {
 		return nil, NewJsonLdError(LoadingDocumentFailed, err)
 	}
-	defer documentBody.Close()
 	document, err := DocumentFromReader(documentBody)
 	if err != nil {
 		return nil, err
