@@ -3,9 +3,10 @@ package ld
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 )
 
@@ -47,6 +48,16 @@ func NewDefaultDocumentLoader(httpClient *http.Client) *DefaultDocumentLoader {
 	return rval
 }
 
+// DocumentFromReader returns a document containing the contents of the JSON resource,
+// streamed from the given Reader.
+func DocumentFromReader(r io.Reader) (interface{}, error) {
+	var document interface{}
+	if err := json.NewDecoder(r).Decode(&document); err != nil {
+		return nil, NewJsonLdError(LoadingDocumentFailed, err)
+	}
+	return document, nil
+}
+
 // LoadDocument returns a RemoteDocument containing the contents of the JSON resource
 // from the given URL.
 func (dl *DefaultDocumentLoader) LoadDocument(u string) (*RemoteDocument, error) {
@@ -55,14 +66,14 @@ func (dl *DefaultDocumentLoader) LoadDocument(u string) (*RemoteDocument, error)
 		return nil, NewJsonLdError(LoadingDocumentFailed, err)
 	}
 
-	var documentBody []byte
+	var documentBody io.ReadCloser
 	var finalURL, contextURL string
 
 	protocol := parsedURL.Scheme
 	if protocol != "http" && protocol != "https" {
 		// Can't use the HTTP client for those!
 		finalURL = u
-		documentBody, err = ioutil.ReadFile(u)
+		documentBody, err = os.Open(u)
 	} else {
 
 		req, err := http.NewRequest("GET", u, nil)
@@ -96,22 +107,16 @@ func (dl *DefaultDocumentLoader) LoadDocument(u string) (*RemoteDocument, error)
 			}
 		}
 
-		documentBody, err = ioutil.ReadAll(res.Body)
+		documentBody = res.Body
 	}
 	if err != nil {
 		return nil, NewJsonLdError(LoadingDocumentFailed, err)
 	}
-
-	var document interface{}
-	if len(documentBody) > 0 {
-		err = json.Unmarshal(documentBody, &document)
-		if err != nil {
-			return nil, NewJsonLdError(LoadingDocumentFailed, err)
-		}
-	} else {
-		document = ""
+	defer documentBody.Close()
+	document, err := DocumentFromReader(documentBody)
+	if err != nil {
+		return nil, err
 	}
-
 	return &RemoteDocument{DocumentURL: finalURL, Document: document, ContextURL: contextURL}, nil
 }
 
