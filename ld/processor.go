@@ -19,6 +19,11 @@ func NewJsonLdProcessor() *JsonLdProcessor {
 // in the Compaction algorithm: http://www.w3.org/TR/json-ld-api/#compaction-algorithm
 func (jldp *JsonLdProcessor) Compact(input interface{}, context interface{},
 	opts *JsonLdOptions) (map[string]interface{}, error) {
+
+	if opts == nil {
+		opts = NewJsonLdOptions("")
+	}
+
 	// 1)
 	// TODO: look into promises
 
@@ -76,10 +81,16 @@ func (jldp *JsonLdProcessor) Compact(input interface{}, context interface{},
 // Expand operation expands the given input according to the steps in the Expansion algorithm:
 // http://www.w3.org/TR/json-ld-api/#expansion-algorithm
 func (jldp *JsonLdProcessor) Expand(input interface{}, opts *JsonLdOptions) ([]interface{}, error) {
+
+	if opts == nil {
+		opts = NewJsonLdOptions("")
+	}
+
 	return jldp.expand(input, opts)
 }
 
 func (jldp *JsonLdProcessor) expand(input interface{}, opts *JsonLdOptions) ([]interface{}, error) {
+
 	// 1)
 	// TODO: look into promises
 
@@ -169,6 +180,11 @@ func (jldp *JsonLdProcessor) expand(input interface{}, opts *JsonLdOptions) ([]i
 // according to the steps in the Flattening algorithm:
 // http://www.w3.org/TR/json-ld-api/#flattening-algorithm
 func (jldp *JsonLdProcessor) Flatten(input interface{}, context interface{}, opts *JsonLdOptions) (interface{}, error) {
+
+	if opts == nil {
+		opts = NewJsonLdOptions("")
+	}
+
 	idGen := NewBlankNodeIDGenerator()
 
 	// 2-6) NOTE: these are all the same steps as in expand
@@ -269,6 +285,10 @@ func (jldp *JsonLdProcessor) Flatten(input interface{}, context interface{}, opt
 // Returns the framed JSON-LD document.
 func (jldp *JsonLdProcessor) Frame(input interface{}, frame interface{}, opts *JsonLdOptions) (map[string]interface{}, error) {
 
+	if opts == nil {
+		opts = NewJsonLdOptions("")
+	}
+
 	if _, isMap := frame.(map[string]interface{}); isMap {
 		frame = CloneDocument(frame)
 	}
@@ -322,6 +342,10 @@ var rdfSerializers = map[string]RDFSerializer{
 //     false not to (default: true).
 func (jldp *JsonLdProcessor) FromRDF(dataset interface{}, opts *JsonLdOptions) (interface{}, error) {
 
+	if opts == nil {
+		opts = NewJsonLdOptions("")
+	}
+
 	// handle non specified serializer case
 	if _, isString := dataset.(string); opts.Format == "" && isString {
 		// attempt to parse the input as nquads
@@ -372,6 +396,10 @@ func (jldp *JsonLdProcessor) fromRDF(input interface{}, opts *JsonLdOptions, ser
 //
 func (jldp *JsonLdProcessor) ToRDF(input interface{}, opts *JsonLdOptions) (interface{}, error) {
 
+	if opts == nil {
+		opts = NewJsonLdOptions("")
+	}
+
 	expandedInput, _ := jldp.expand(input, opts)
 	api := NewJsonLdApi()
 	dataset, err := api.ToRDF(expandedInput, opts)
@@ -409,6 +437,10 @@ func (jldp *JsonLdProcessor) ToRDF(input interface{}, opts *JsonLdOptions) (inte
 // Normalize performs RDF dataset normalization on the given JSON-LD input.
 // The output is an RDF dataset unless the 'format' option is used.
 func (jldp *JsonLdProcessor) Normalize(input interface{}, opts *JsonLdOptions) (interface{}, error) {
+
+	if opts == nil {
+		opts = NewJsonLdOptions("")
+	}
 
 	toRDFOpts := NewJsonLdOptions(opts.Base)
 	toRDFOpts.Format = ""
