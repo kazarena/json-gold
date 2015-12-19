@@ -23,13 +23,14 @@ func main() {
 
 	// expanding in-memory document
 
-	doc := make(map[string]interface{})
-	doc["@context"] = "http://schema.org/"
-	doc["@type"] = "Person"
-	doc["name"] = "Jane Doe"
-	doc["jobTitle"] = "Professor"
-	doc["telephone"] = "(425) 123-4567"
-	doc["url"] = "http://www.janedoe.com"
+	doc := map[string]interface{}{
+		"@context": "http://schema.org/",
+		"@type": "Person",
+		"name": "Jane Doe",
+		"jobTitle": "Professor",
+		"telephone": "(425) 123-4567",
+		"url": "http://www.janedoe.com",
+	}
 
 	expanded, err = proc.Expand(doc, options)
 	if err != nil {
