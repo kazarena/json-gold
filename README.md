@@ -14,7 +14,7 @@ This implementation was heavily influenced by [JSONLD-Java](https://github.com/j
 
 ### Expand ###
 
-See complete code in [examples/expand.go](https://github.com/kazarena/json-gold/examples/expand.go).
+See complete code in [examples/expand.go](examples/expand.go).
 
     proc := ld.NewJsonLdProcessor()
     options := ld.NewJsonLdOptions("")
@@ -42,7 +42,7 @@ See complete code in [examples/expand.go](https://github.com/kazarena/json-gold/
 
 ### Compact ###
 
-See complete code in [examples/compact.go](https://github.com/kazarena/json-gold/examples/compact.go).
+See complete code in [examples/compact.go](examples/compact.go).
 
 	proc := ld.NewJsonLdProcessor()
 	options := ld.NewJsonLdOptions("")
@@ -69,7 +69,7 @@ See complete code in [examples/compact.go](https://github.com/kazarena/json-gold
 
 ### Flatten ###
 
-See complete code in [examples/flatten.go](https://github.com/kazarena/json-gold/examples/flatten.go).
+See complete code in [examples/flatten.go](examples/flatten.go).
 
 	proc := ld.NewJsonLdProcessor()
 	options := ld.NewJsonLdOptions("")
@@ -98,7 +98,7 @@ See complete code in [examples/flatten.go](https://github.com/kazarena/json-gold
 
 ### Frame ###
 
-See complete code in [examples/frame.go](https://github.com/kazarena/json-gold/examples/frame.go).
+See complete code in [examples/frame.go](examples/frame.go).
 
 	proc := ld.NewJsonLdProcessor()
 	options := ld.NewJsonLdOptions("")
@@ -149,7 +149,7 @@ See complete code in [examples/frame.go](https://github.com/kazarena/json-gold/e
 
 ### To RDF ###
 
-See complete code in [examples/to_rdf.go](https://github.com/kazarena/json-gold/examples/to_rdf.go).
+See complete code in [examples/to_rdf.go](examples/to_rdf.go).
 
 	proc := ld.NewJsonLdProcessor()
 	options := ld.NewJsonLdOptions("")
@@ -179,7 +179,7 @@ See complete code in [examples/to_rdf.go](https://github.com/kazarena/json-gold/
 
 ### From RDF ###
 
-See complete code in [examples/to_rdf.go](https://github.com/kazarena/json-gold/examples/from_rdf.go).
+See complete code in [examples/to_rdf.go](examples/from_rdf.go).
 
 	proc := ld.NewJsonLdProcessor()
 	options := ld.NewJsonLdOptions("")
@@ -196,7 +196,7 @@ See complete code in [examples/to_rdf.go](https://github.com/kazarena/json-gold/
 
 ### Normalize ###
 
-See complete code in [examples/normalize.go](https://github.com/kazarena/json-gold/examples/normalize.go).
+See complete code in [examples/normalize.go](examples/normalize.go).
 
 	proc := ld.NewJsonLdProcessor()
 	options := ld.NewJsonLdOptions("")
