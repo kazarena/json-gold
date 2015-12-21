@@ -179,7 +179,7 @@ See complete code in [examples/to_rdf.go](examples/to_rdf.go).
 
 ### From RDF ###
 
-See complete code in [examples/to_rdf.go](examples/from_rdf.go).
+See complete code in [examples/from_rdf.go](examples/from_rdf.go).
 
 	proc := ld.NewJsonLdProcessor()
 	options := ld.NewJsonLdOptions("")
