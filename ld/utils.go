@@ -2,6 +2,7 @@ package ld
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -67,7 +68,34 @@ func DeepCompare(v1 interface{}, v2 interface{}, listOrderMatters bool) bool {
 		}
 		return true
 	} else {
-		return v1 == v2
+		if v1 != v2 {
+			// perform additional checks. If the client code sets UseNumber() property
+			// of json.Decoder to decode numbers (see https://golang.org/pkg/encoding/json/#Decoder.UseNumber ),
+			// simple comparison will fail.
+			return normalizeValue(v1) == normalizeValue(v2)
+		} else {
+			return true
+		}
+	}
+}
+
+// normalizeValue allows comparisons between json.Number and float/integer values.
+func normalizeValue(v interface{}) string {
+	floatVal, isFloat := v.(float64)
+
+	if !isFloat {
+		if number, isNumber := v.(json.Number); isNumber {
+			var floatErr error
+			floatVal, floatErr = number.Float64()
+			if floatErr == nil {
+				isFloat = true
+			}
+		}
+	}
+	if isFloat {
+		return fmt.Sprintf("%f", floatVal)
+	} else {
+		return fmt.Sprintf("%s", v)
 	}
 }
 

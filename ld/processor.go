@@ -400,7 +400,11 @@ func (jldp *JsonLdProcessor) ToRDF(input interface{}, opts *JsonLdOptions) (inte
 		opts = NewJsonLdOptions("")
 	}
 
-	expandedInput, _ := jldp.expand(input, opts)
+	expandedInput, err := jldp.expand(input, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	api := NewJsonLdApi()
 	dataset, err := api.ToRDF(expandedInput, opts)
 	if err != nil {

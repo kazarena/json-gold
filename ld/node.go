@@ -224,7 +224,6 @@ func objectToRDF(item interface{}) Node {
 		// convert to XSD datatypes as appropriate
 		booleanVal, isBool := value.(bool)
 		floatVal, isFloat := value.(float64)
-		isInteger := isFloat && floatVal == float64(int64(floatVal))
 
 		if !isBool && !isFloat {
 			// if document was created using a standard JSON decoder from json package
@@ -236,16 +235,13 @@ func objectToRDF(item interface{}) Node {
 			// The code below takes care of it so it doesn't matter
 			// how the document was decoded from JSON.
 			if number, isNumber := value.(json.Number); isNumber {
-				var err error
-				floatVal, err = number.Float64()
-				if err != nil {
-					_, err = number.Int64()
-					isInteger = (err == nil)
-				} else {
-					isFloat = true
-				}
+				var floatErr error
+				floatVal, floatErr = number.Float64()
+				isFloat = (floatErr == nil)
 			}
 		}
+
+		isInteger := isFloat && floatVal == float64(int64(floatVal))
 
 		datatypeStr, _ := datatype.(string)
 		if isBool || isFloat {

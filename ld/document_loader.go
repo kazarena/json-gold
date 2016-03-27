@@ -50,7 +50,12 @@ func NewDefaultDocumentLoader(httpClient *http.Client) *DefaultDocumentLoader {
 // streamed from the given Reader.
 func DocumentFromReader(r io.Reader) (interface{}, error) {
 	var document interface{}
-	if err := json.NewDecoder(r).Decode(&document); err != nil {
+	dec := json.NewDecoder(r)
+
+	// If dec.UseNumber() were invoked here, all numbers would be decoded as json.Number.
+	// json-gold supports both the default and json.Number options.
+
+	if err := dec.Decode(&document); err != nil {
 		return nil, NewJsonLdError(LoadingDocumentFailed, err)
 	}
 	return document, nil
