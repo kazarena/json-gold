@@ -24,12 +24,12 @@ func main() {
 	// expanding in-memory document
 
 	doc := map[string]interface{}{
-		"@context": "http://schema.org/",
-		"@type": "Person",
-		"name": "Jane Doe",
-		"jobTitle": "Professor",
+		"@context":  "http://schema.org/",
+		"@type":     "Person",
+		"name":      "Jane Doe",
+		"jobTitle":  "Professor",
 		"telephone": "(425) 123-4567",
-		"url": "http://www.janedoe.com",
+		"url":       "http://www.janedoe.com",
 	}
 
 	expanded, err = proc.Expand(doc, options)

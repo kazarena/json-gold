@@ -15,7 +15,7 @@ func main() {
 			map[string]interface{}{
 				"name": "http://xmlns.com/foaf/0.1/name",
 				"homepage": map[string]interface{}{
-					"@id": "http://xmlns.com/foaf/0.1/homepage",
+					"@id":   "http://xmlns.com/foaf/0.1/homepage",
 					"@type": "@id",
 				},
 			},
@@ -23,10 +23,10 @@ func main() {
 				"ical": "http://www.w3.org/2002/12/cal/ical#",
 			},
 		},
-		"@id": "http://example.com/speakers#Alice",
-		"name": "Alice",
-		"homepage": "http://xkcd.com/177/",
-		"ical:summary": "Alice Talk",
+		"@id":           "http://example.com/speakers#Alice",
+		"name":          "Alice",
+		"homepage":      "http://xkcd.com/177/",
+		"ical:summary":  "Alice Talk",
 		"ical:location": "Lyon Convention Centre, Lyon, France",
 	}
 

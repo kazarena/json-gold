@@ -15,7 +15,7 @@ func main() {
 		"@context": map[string]interface{}{
 			"ex": "http://example.org/vocab#",
 		},
-		"@id": "http://example.org/test#example",
+		"@id":   "http://example.org/test#example",
 		"@type": "ex:Foo",
 		"ex:embed": map[string]interface{}{
 			"@type": "ex:Bar",

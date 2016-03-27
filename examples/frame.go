@@ -12,28 +12,28 @@ func main() {
 
 	doc := map[string]interface{}{
 		"@context": map[string]interface{}{
-			"dc": "http://purl.org/dc/elements/1.1/",
-			"ex": "http://example.org/vocab#",
+			"dc":          "http://purl.org/dc/elements/1.1/",
+			"ex":          "http://example.org/vocab#",
 			"ex:contains": map[string]interface{}{"@type": "@id"},
 		},
 		"@graph": []interface{}{
 			map[string]interface{}{
-				"@id": "http://example.org/test/#library",
-				"@type": "ex:Library",
+				"@id":         "http://example.org/test/#library",
+				"@type":       "ex:Library",
 				"ex:contains": "http://example.org/test#book",
 			},
 			map[string]interface{}{
-				"@id": "http://example.org/test#book",
-				"@type": "ex:Book",
+				"@id":            "http://example.org/test#book",
+				"@type":          "ex:Book",
 				"dc:contributor": "Writer",
-				"dc:title": "My Book",
-				"ex:contains": "http://example.org/test#chapter",
+				"dc:title":       "My Book",
+				"ex:contains":    "http://example.org/test#chapter",
 			},
 			map[string]interface{}{
-				"@id": "http://example.org/test#chapter",
-				"@type": "ex:Chapter",
+				"@id":            "http://example.org/test#chapter",
+				"@type":          "ex:Chapter",
 				"dc:description": "Fun",
-				"dc:title": "Chapter One",
+				"dc:title":       "Chapter One",
 			},
 		},
 	}
