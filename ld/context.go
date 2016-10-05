@@ -985,8 +985,15 @@ func (c *Context) ExpandValue(activeProperty string, value interface{}) (interfa
 	if td != nil && td["@type"] == "@id" {
 		// TODO: i'm pretty sure value should be a string if the @type is
 		// @id
+		valueStr, isString := value.(string)
+		if !isString {
+			msg := fmt.Sprintf(
+				"Expected string for @id value (property: %s). got %v",
+				activeProperty, value)
+			return nil, NewJsonLdError(InvalidIRIMapping, msg)
+		}
 		var err error
-		rval["@id"], err = c.ExpandIri(value.(string), true, false, nil, nil)
+		rval["@id"], err = c.ExpandIri(valueStr, true, false, nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -995,8 +1002,15 @@ func (c *Context) ExpandValue(activeProperty string, value interface{}) (interfa
 	// 2)
 	if td != nil && td["@type"] == "@vocab" {
 		// TODO: same as above
+		valueStr, isString := value.(string)
+		if !isString {
+			msg := fmt.Sprintf(
+				"Expected string for @id value (property: %s). got %v",
+				activeProperty, value)
+			return nil, NewJsonLdError(InvalidIRIMapping, msg)
+		}
 		var err error
-		rval["@id"], err = c.ExpandIri(value.(string), true, true, nil, nil)
+		rval["@id"], err = c.ExpandIri(valueStr, true, true, nil, nil)
 		if err != nil {
 			return nil, err
 		}
