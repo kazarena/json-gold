@@ -16,6 +16,34 @@ import (
 	"time"
 )
 
+// RewriteHostTransport is an http.RoundTripper that rewrites requests
+// using the provided Host. The Opaque field is untouched.
+// If Transport is nil, http.DefaultTransport is used
+type RewriteHostTransport struct {
+	Transport http.RoundTripper
+	Host      string
+}
+
+func (t RewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// save the original host
+	origHost := req.URL.Host
+	// rewrite the host
+	req.URL.Host = t.Host
+
+	rt := t.Transport
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
+	res, err := rt.RoundTrip(req)
+
+	if err == nil {
+		// restore the original host to ensure the client doesn't know the response
+		// came from a MockServer instance
+		res.Request.URL.Host = origHost
+	}
+	return res, err
+}
+
 // MockServer uses httptest package to mock live HTTP calls.
 type MockServer struct {
 	Base       string
@@ -33,13 +61,13 @@ type MockServer struct {
 
 // NewMockServer creates a new instance of MockServer.
 func NewMockServer(base string, testFolder string) *MockServer {
-
 	mockServer := &MockServer{
 		Base:       base,
 		TestFolder: testFolder,
 	}
 
-	mockServer.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var ts *httptest.Server
+	mockFunc := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if mockServer.HttpStatus != 0 {
 			// must be a redirect
 			w.Header().Set("Location", mockServer.Base+mockServer.RedirectTo)
@@ -57,7 +85,7 @@ func NewMockServer(base string, testFolder string) *MockServer {
 					}
 				}
 
-				fileName := filepath.Join(mockServer.TestFolder, u[len(mockServer.Base):len(u)])
+				fileName := filepath.Join(mockServer.TestFolder, u[len(mockServer.Base):])
 				inputBytes, err := ioutil.ReadFile(fileName)
 				if err == nil {
 					w.Header().Set("Content-Type", contentType)
@@ -77,15 +105,39 @@ func NewMockServer(base string, testFolder string) *MockServer {
 		// currently there are no tests where it needs to work in a different way
 		mockServer.HttpStatus = 0
 		mockServer.HttpLink = nil
-	}))
+	})
 
-	transport := &http.Transport{
-		Proxy: func(req *http.Request) (*url.URL, error) {
-			return url.Parse(mockServer.server.URL)
-		},
+	if strings.HasPrefix(base, "https") {
+		ts = httptest.NewTLSServer(mockFunc)
+	} else {
+		ts = httptest.NewServer(mockFunc)
 	}
 
-	mockServer.DocumentLoader = NewDefaultDocumentLoader(&http.Client{Transport: transport})
+	// get httptest.Server's URL
+
+	tsUrl, err := url.Parse(ts.URL)
+	if err != nil {
+		log.Fatalln("failed to parse httptest.Server URL:", err)
+	}
+
+	// update base URL with httptest.Server's host
+
+	baseUrl, err := url.Parse(base)
+	if err != nil {
+		log.Fatalln("failed to parse base URL:", err)
+	}
+	baseUrl.Host = tsUrl.Host
+	mockServer.Base = baseUrl.Path
+
+	client := ts.Client()
+
+	client.Transport = RewriteHostTransport{
+		Transport: client.Transport,
+		Host:      tsUrl.Host,
+	}
+
+	mockServer.server = ts
+	mockServer.DocumentLoader = NewDefaultDocumentLoader(client)
 
 	return mockServer
 }
