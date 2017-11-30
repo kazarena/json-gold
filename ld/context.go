@@ -552,6 +552,9 @@ func (c *Context) CompactIri(iri string, value interface{}, relativeToVocab bool
 				commonLanguage = defaultLanguage
 			}
 			commonType := ""
+			if len(list) == 0 {
+				commonType = "@id"
+			}
 			// 2.6.4)
 			for _, item := range list {
 				// 2.6.4.1)
