@@ -172,16 +172,14 @@ func RemoveBase(baseobj interface{}, iri string) string {
 	baseSegments := strings.Split(base.NormalizedPath, "/")
 	iriSegments := strings.Split(rel.NormalizedPath, "/")
 
-	for len(baseSegments) > 0 && len(iriSegments) > 0 {
-		if baseSegments[0] != iriSegments[0] {
-			break
-		}
-		if len(baseSegments) > 0 {
-			baseSegments = baseSegments[1:]
-		}
-		if len(iriSegments) > 0 {
-			iriSegments = iriSegments[1:]
-		}
+	last := 1
+	if len(rel.Hash) > 0 || len(rel.Query) > 0 {
+		last = 0
+	}
+
+	for len(baseSegments) > 0 && len(iriSegments) > last && baseSegments[0] == iriSegments[0] {
+		baseSegments = baseSegments[1:]
+		iriSegments = iriSegments[1:]
 	}
 
 	// use '../' for each non-matching base segment

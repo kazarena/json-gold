@@ -31,4 +31,10 @@ func TestRemoveBase(t *testing.T) {
 		"http://json-ld.org/test-suite/",
 	)
 	assert.Equal(t, "../", result)
+
+	result = RemoveBase(
+		"http://example.com/api/things/1",
+		"http://example.com/api/things/1",
+	)
+	assert.Equal(t, "1", result)
 }
