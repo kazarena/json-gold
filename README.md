@@ -4,7 +4,7 @@ This library is an implementation of the [JSON-LD](http://json-ld.org/) specific
 
 ## Testing & Compliance ##
 
-As of April 1, 2015 all tests from the [official JSON-LD test suite](https://github.com/json-ld/json-ld.org/tree/master/test-suite) pass. Thanks to httptest Go package, it takes around 300ms to run the whole suite while making live connections to a mock HTTP server.
+As of December 1, 2017 all tests from the [official JSON-LD test suite](https://github.com/json-ld/json-ld.org/tree/master/test-suite) pass. Thanks to httptest Go package, it takes around 230ms to run the whole suite while making live connections to a mock HTTP server.
 
 ## Inspiration ##
 
