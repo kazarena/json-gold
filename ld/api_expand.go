@@ -11,7 +11,8 @@ import (
 //
 // Returns the expanded JSON-LD object.
 // Returns an error if there was an error during expansion.
-func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element interface{}) (interface{}, error) {
+func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element interface{}, opts *JsonLdOptions) (interface{}, error) {
+	frameExpansion := opts.ProcessingMode == JsonLd_1_1_Frame
 	// 1)
 	if element == nil {
 		return nil, nil
@@ -25,7 +26,7 @@ func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element 
 		// 3.2)
 		for _, item := range elem {
 			// 3.2.1)
-			v, err := api.Expand(activeCtx, activeProperty, item)
+			v, err := api.Expand(activeCtx, activeProperty, item, opts)
 			if err != nil {
 				return nil, err
 			}
@@ -97,12 +98,35 @@ func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element 
 				// 7.4.3)
 				if expandedProperty == "@id" {
 					valueStr, isString := value.(string)
-					if !isString {
+					if isString {
+						expandedValue, err = activeCtx.ExpandIri(valueStr, true, false, nil, nil)
+						if err != nil {
+							return nil, err
+						}
+					} else if frameExpansion {
+						if valueMap, isMap := value.(map[string]interface{}); isMap {
+							if len(valueMap) != 0 {
+								return nil, NewJsonLdError(InvalidIDValue, "@id value must be a an empty object for framing")
+							}
+							expandedValue = value
+						} else if valueList, isList := value.([]interface{}); isList {
+							expandedValue := make([]string, 0)
+							for _, v := range valueList {
+								vString, isString := v.(string)
+								if !isString {
+									return nil, NewJsonLdError(InvalidIDValue, "@id value must be a string, an array of strings or an empty dictionary")
+								}
+								v, err := activeCtx.ExpandIri(vString, true, true, nil, nil)
+								if err != nil {
+									return nil, err
+								}
+								expandedValue = append(expandedValue, v)
+							}
+						} else {
+							return nil, NewJsonLdError(InvalidIDValue, "value of @id must be a string, an array of strings or an empty dictionary")
+						}
+					} else {
 						return nil, NewJsonLdError(InvalidIDValue, "value of @id must be a string")
-					}
-					expandedValue, err = activeCtx.ExpandIri(valueStr, true, false, nil, nil)
-					if err != nil {
-						return nil, err
 					}
 				} else if expandedProperty == "@type" { // 7.4.4)
 					switch v := value.(type) {
@@ -136,7 +160,7 @@ func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element 
 						return nil, NewJsonLdError(InvalidTypeValue, "@type value must be a string or array of strings")
 					}
 				} else if expandedProperty == "@graph" { // 7.4.5)
-					expandedValue, _ = api.Expand(activeCtx, "@graph", value)
+					expandedValue, _ = api.Expand(activeCtx, "@graph", value, opts)
 				} else if expandedProperty == "@value" { // 7.4.6)
 					_, isMap := value.(map[string]interface{})
 					_, isList := value.([]interface{})
@@ -169,7 +193,7 @@ func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element 
 						continue
 					}
 					// 7.4.9.2)
-					expandedValue, _ = api.Expand(activeCtx, activeProperty, value)
+					expandedValue, _ = api.Expand(activeCtx, activeProperty, value, opts)
 
 					// NOTE: step not in the spec yet
 					expandedValueList, isList := expandedValue.([]interface{})
@@ -186,14 +210,14 @@ func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element 
 						}
 					}
 				} else if expandedProperty == "@set" { // 7.4.10)
-					expandedValue, _ = api.Expand(activeCtx, activeProperty, value)
+					expandedValue, _ = api.Expand(activeCtx, activeProperty, value, opts)
 				} else if expandedProperty == "@reverse" { // 7.4.11)
 					_, isMap := value.(map[string]interface{})
 					if !isMap {
 						return nil, NewJsonLdError(InvalidReverseValue, "@reverse value must be an object")
 					}
 					// 7.4.11.1)
-					expandedValue, err = api.Expand(activeCtx, "@reverse", value)
+					expandedValue, err = api.Expand(activeCtx, "@reverse", value, opts)
 					if err != nil {
 						return nil, err
 					}
@@ -275,7 +299,7 @@ func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element 
 					expandedProperty == "@embed" ||
 					expandedProperty == "@embedChildren" ||
 					expandedProperty == "@omitDefault" {
-					expandedValue, _ = api.Expand(activeCtx, expandedProperty, value)
+					expandedValue, _ = api.Expand(activeCtx, expandedProperty, value, opts)
 				}
 				// 7.4.12)
 				if expandedValue != nil {
@@ -324,7 +348,7 @@ func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element 
 							indexValueList = []interface{}{indexValue}
 						}
 						// 7.6.2.2)
-						indexValue, _ = api.Expand(activeCtx, key, indexValueList)
+						indexValue, _ = api.Expand(activeCtx, key, indexValueList, opts)
 						// 7.6.2.3)
 						for _, itemValue := range indexValue.([]interface{}) {
 							item := itemValue.(map[string]interface{})
@@ -339,7 +363,7 @@ func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element 
 					expandedValue = expandedValueList
 				} else {
 					// 7.7)
-					expandedValue, err = api.Expand(activeCtx, key, value)
+					expandedValue, err = api.Expand(activeCtx, key, value, opts)
 					if err != nil {
 						return nil, err
 					}
@@ -513,7 +537,7 @@ func (api *JsonLdApi) Expand(activeCtx *Context, activeProperty string, element 
 			if resultMap != nil && (len(resultMap) == 0 || hasValue || hasList) {
 				resultMap = nil
 				result = nil
-			} else if resultMap != nil && hasID && len(resultMap) == 1 { // 12.2)
+			} else if resultMap != nil && !frameExpansion && hasID && len(resultMap) == 1 { // 12.2)
 				resultMap = nil
 				result = nil
 			}

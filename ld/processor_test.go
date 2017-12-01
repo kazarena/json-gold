@@ -205,6 +205,21 @@ func TestSuite(t *testing.T) {
 			if optionVal, optionsPresent := testMap["option"]; optionsPresent {
 				testOpts := optionVal.(map[string]interface{})
 
+				if value, hasValue := testOpts["specVersion"]; hasValue {
+					// this library supports JSON-LD 1.0 spec only
+					if value != "json-ld-1.0" {
+						continue
+					}
+				}
+
+				if value, hasValue := testOpts["processingMode"]; hasValue {
+					// this library supports JSON-LD 1.0 spec only
+					if value != "json-ld-1.0" {
+						continue
+					}
+					options.ProcessingMode = value.(string)
+				}
+
 				if value, hasValue := testOpts["base"]; hasValue {
 					options.Base = value.(string)
 				}
@@ -362,6 +377,7 @@ func TestSuite(t *testing.T) {
 					log.Println("==== EXPECTED ====")
 					b, _ = json.MarshalIndent(expected, "", "  ")
 					os.Stdout.Write(b)
+					os.Stdout.WriteString("\n")
 
 				} else if expectedType == ".nq" {
 					log.Println("==== ACTUAL ====")
