@@ -1,5 +1,11 @@
 package ld
 
+const (
+	JsonLd_1_0       = "json-ld-1.0"
+	JsonLd_1_1       = "json-ld-1.1"
+	JsonLd_1_1_Frame = "json-ld-1.1-expand-frame"
+)
+
 // JsonLdOptions type as specified in the JSON-LD-API specification:
 // http://www.w3.org/TR/json-ld-api/#the-jsonldoptions-type
 type JsonLdOptions struct {
@@ -41,7 +47,7 @@ func NewJsonLdOptions(base string) *JsonLdOptions {
 	return &JsonLdOptions{
 		Base:                  base,
 		CompactArrays:         true,
-		ProcessingMode:        "json-ld-1.0",
+		ProcessingMode:        JsonLd_1_0,
 		DocumentLoader:        NewDefaultDocumentLoader(nil),
 		Embed:                 true,
 		Explicit:              false,

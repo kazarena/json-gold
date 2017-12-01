@@ -149,7 +149,7 @@ func (jldp *JsonLdProcessor) expand(input interface{}, opts *JsonLdOptions) ([]i
 
 	// 6)
 	api := NewJsonLdApi()
-	expanded, err := api.Expand(activeCtx, "", input)
+	expanded, err := api.Expand(activeCtx, "", input, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -293,15 +293,27 @@ func (jldp *JsonLdProcessor) Frame(input interface{}, frame interface{}, opts *J
 		frame = CloneDocument(frame)
 	}
 
+	// 2. Set expanded input to the result of using the expand method using input and options.
 	expandedInput, err := jldp.Expand(input, opts)
 	if err != nil {
 		return nil, err
 	}
+
+	// 3. Set expanded frame to the result of using the expand method using frame and options
+	// with expandContext set to null and processingMode set to json-ld-1.1-expand-frame.
+	savedProcessingMode := opts.ProcessingMode
+	savedExpandedContext := opts.ExpandContext
+	opts.ProcessingMode = JsonLd_1_1_Frame
+	opts.ExpandContext = nil
 	expandedFrame, err := jldp.Expand(frame, opts)
 	if err != nil {
 		return nil, err
 	}
+	opts.ProcessingMode = savedProcessingMode
+	opts.ExpandContext = savedExpandedContext
 
+	// 4. Set context to the value of @context from frame, if it exists, or to a new empty
+	// context, otherwise.
 	api := NewJsonLdApi()
 
 	framed, err := api.Frame(expandedInput, expandedFrame, opts)
