@@ -513,174 +513,187 @@ func (c *Context) CompactIri(iri string, value interface{}, relativeToVocab bool
 		return ""
 	}
 	// 2)
-	if _, containsIRI := c.GetInverse()[iri]; relativeToVocab && containsIRI {
-		// 2.1)
-		defaultLanguage := "@none"
-		langVal, hasLang := c.values["@language"]
-		if hasLang {
-			defaultLanguage = langVal.(string)
-		}
-
-		// 2.2)
-		containers := make([]string, 0)
-		// 2.3)
-		typeLanguage := "@language"
-		typeLanguageValue := "@null"
-
-		// 2.4)
-		valueMap, isMap := value.(map[string]interface{})
-		_, containsIndex := valueMap["@index"]
-		if isMap && containsIndex {
-			containers = append(containers, "@index")
-		}
-
-		// 2.5)
-		if reverse {
-			typeLanguage = "@type"
-			typeLanguageValue = "@reverse"
-			containers = append(containers, "@set")
-		} else if valueList, containsList := valueMap["@list"]; isMap && containsList { // 2.6)
-			// 2.6.1)
-			if !containsIndex {
-				containers = append(containers, "@list")
+	if relativeToVocab {
+		if _, containsIRI := c.GetInverse()[iri]; containsIRI {
+			// 2.1)
+			defaultLanguage := "@none"
+			langVal, hasLang := c.values["@language"]
+			if hasLang {
+				defaultLanguage = langVal.(string)
 			}
-			// 2.6.2)
-			list := valueList.([]interface{})
-			// 2.6.3)
-			commonLanguage := ""
-			if len(list) == 0 {
-				commonLanguage = defaultLanguage
+
+			// 2.2)
+			containers := make([]string, 0)
+			// 2.3)
+			typeLanguage := "@language"
+			typeLanguageValue := "@null"
+
+			// 2.4)
+			valueMap, isMap := value.(map[string]interface{})
+			_, containsIndex := valueMap["@index"]
+			if isMap && containsIndex {
+				containers = append(containers, "@index")
 			}
-			commonType := ""
-			if len(list) == 0 {
-				commonType = "@id"
-			}
-			// 2.6.4)
-			for _, item := range list {
-				// 2.6.4.1)
-				itemLanguage := "@none"
-				itemType := "@none"
-				// 2.6.4.2)
-				if IsValue(item) {
-					// 2.6.4.2.1)
-					itemMap := item.(map[string]interface{})
-					if langVal, hasLang := itemMap["@language"]; hasLang {
-						itemLanguage = langVal.(string)
-					} else if typeVal, hasType := itemMap["@type"]; hasType { // 2.6.4.2.2)
-						itemType = typeVal.(string)
-					} else { // 2.6.4.2.3)
-						itemLanguage = "@null"
-					}
-				} else { // 2.6.4.3)
-					itemType = "@id"
+
+			// 2.5)
+			if reverse {
+				typeLanguage = "@type"
+				typeLanguageValue = "@reverse"
+				containers = append(containers, "@set")
+			} else if valueList, containsList := valueMap["@list"]; isMap && containsList {
+				// 2.6)
+				// 2.6.1)
+				if !containsIndex {
+					containers = append(containers, "@list")
 				}
-				// 2.6.4.4)
+				// 2.6.2)
+				list := valueList.([]interface{})
+				// 2.6.3)
+				commonLanguage := ""
+				if len(list) == 0 {
+					commonLanguage = defaultLanguage
+				}
+				commonType := ""
+				if len(list) == 0 {
+					commonType = "@id"
+				}
+				// 2.6.4)
+				for _, item := range list {
+					// 2.6.4.1)
+					itemLanguage := "@none"
+					itemType := "@none"
+					// 2.6.4.2)
+					if IsValue(item) {
+						// 2.6.4.2.1)
+						itemMap := item.(map[string]interface{})
+						if langVal, hasLang := itemMap["@language"]; hasLang {
+							itemLanguage = langVal.(string)
+						} else if typeVal, hasType := itemMap["@type"]; hasType {
+							// 2.6.4.2.2)
+							itemType = typeVal.(string)
+						} else {
+							// 2.6.4.2.3)
+							itemLanguage = "@null"
+						}
+					} else {
+						// 2.6.4.3)
+						itemType = "@id"
+					}
+					// 2.6.4.4)
+					if commonLanguage == "" {
+						commonLanguage = itemLanguage
+					} else if commonLanguage != itemLanguage && IsValue(item) {
+						// 2.6.4.5)
+						commonLanguage = "@none"
+					}
+					// 2.6.4.6)
+					if commonType == "" {
+						commonType = itemType
+					} else if commonType != itemType {
+						// 2.6.4.7)
+						commonType = "@none"
+					}
+					// 2.6.4.8)
+					if commonLanguage == "@none" && commonType == "@none" {
+						break
+					}
+				}
+				// 2.6.5)
 				if commonLanguage == "" {
-					commonLanguage = itemLanguage
-				} else if commonLanguage != itemLanguage && IsValue(item) { // 2.6.4.5)
 					commonLanguage = "@none"
 				}
-				// 2.6.4.6)
+				// 2.6.6)
 				if commonType == "" {
-					commonType = itemType
-				} else if commonType != itemType { // 2.6.4.7)
 					commonType = "@none"
 				}
-				// 2.6.4.8)
-				if commonLanguage == "@none" && commonType == "@none" {
-					break
-				}
-			}
-			// 2.6.5)
-			if commonLanguage == "" {
-				commonLanguage = "@none"
-			}
-			// 2.6.6)
-			if commonType == "" {
-				commonType = "@none"
-			}
-			// 2.6.7)
-			if commonType != "@none" {
-				typeLanguage = "@type"
-				typeLanguageValue = commonType
-			} else { // 2.6.8)
-				typeLanguageValue = commonLanguage
-			}
-		} else { // 2.7)
-			// 2.7.1)
-			if IsValue(value) {
-				// 2.7.1.1)
-				langVal, hasLang := valueMap["@language"]
-				_, hasIndex := valueMap["@index"]
-				if hasLang && !hasIndex {
-					containers = append(containers, "@language")
-					typeLanguageValue = langVal.(string)
-				} else if typeVal, hasType := valueMap["@type"]; hasType { // 2.7.1.2)
+				// 2.6.7)
+				if commonType != "@none" {
 					typeLanguage = "@type"
-					typeLanguageValue = typeVal.(string)
+					typeLanguageValue = commonType
+				} else {
+					// 2.6.8)
+					typeLanguageValue = commonLanguage
 				}
-			} else { // 2.7.2)
-				typeLanguage = "@type"
-				typeLanguageValue = "@id"
+			} else {
+				// 2.7)
+				// 2.7.1)
+				if IsValue(value) {
+					// 2.7.1.1)
+					langVal, hasLang := valueMap["@language"]
+					_, hasIndex := valueMap["@index"]
+					if hasLang && !hasIndex {
+						containers = append(containers, "@language")
+						typeLanguageValue = langVal.(string)
+					} else if typeVal, hasType := valueMap["@type"]; hasType {
+						// 2.7.1.2)
+						typeLanguage = "@type"
+						typeLanguageValue = typeVal.(string)
+					}
+				} else {
+					// 2.7.2)
+					typeLanguage = "@type"
+					typeLanguageValue = "@id"
+				}
+				// 2.7.3)
+				containers = append(containers, "@set")
 			}
-			// 2.7.3)
-			containers = append(containers, "@set")
-		}
-		// 2.8)
-		containers = append(containers, "@none")
-		// 2.9)
-		if typeLanguageValue == "" {
-			typeLanguageValue = "@null"
-		}
-		// 2.10)
-		preferredValues := make([]string, 0)
-		// 2.11)
-		if typeLanguageValue == "@reverse" {
-			preferredValues = append(preferredValues, "@reverse")
-		}
-		// 2.12)
-		idVal, hasID := valueMap["@id"]
-		if (typeLanguageValue == "@reverse" || typeLanguageValue == "@id") && hasID {
-			// 2.12.1)
-			result := c.CompactIri(idVal.(string), nil, true, true)
-			resultVal, hasResult := c.termDefinitions[result]
-			check := false
-			if hasResult {
-				resultIDVal, hasResultID := resultVal.(map[string]interface{})["@id"]
-				check = hasResultID && idVal == resultIDVal
+			// 2.8)
+			containers = append(containers, "@none")
+			// 2.9)
+			if typeLanguageValue == "" {
+				typeLanguageValue = "@null"
 			}
-			if check {
-				preferredValues = append(preferredValues, "@vocab")
-				preferredValues = append(preferredValues, "@id")
-			} else { // 2.12.2)
-				preferredValues = append(preferredValues, "@id")
-				preferredValues = append(preferredValues, "@vocab")
+			// 2.10)
+			preferredValues := make([]string, 0)
+			// 2.11)
+			if typeLanguageValue == "@reverse" {
+				preferredValues = append(preferredValues, "@reverse")
 			}
-		} else { // 2.13)
-			preferredValues = append(preferredValues, typeLanguageValue)
-		}
-		preferredValues = append(preferredValues, "@none")
+			// 2.12)
+			idVal, hasID := valueMap["@id"]
+			if (typeLanguageValue == "@reverse" || typeLanguageValue == "@id") && hasID {
+				// 2.12.1)
+				result := c.CompactIri(idVal.(string), nil, true, true)
+				resultVal, hasResult := c.termDefinitions[result]
+				check := false
+				if hasResult {
+					resultIDVal, hasResultID := resultVal.(map[string]interface{})["@id"]
+					check = hasResultID && idVal == resultIDVal
+				}
+				if check {
+					preferredValues = append(preferredValues, "@vocab")
+					preferredValues = append(preferredValues, "@id")
+				} else {
+					// 2.12.2)
+					preferredValues = append(preferredValues, "@id")
+					preferredValues = append(preferredValues, "@vocab")
+				}
+			} else {
+				// 2.13)
+				preferredValues = append(preferredValues, typeLanguageValue)
+			}
+			preferredValues = append(preferredValues, "@none")
 
-		// 2.14)
-		term := c.SelectTerm(iri, containers, typeLanguage, preferredValues)
-		// 2.15)
-		if term != "" {
-			return term
+			// 2.14)
+			term := c.SelectTerm(iri, containers, typeLanguage, preferredValues)
+			// 2.15)
+			if term != "" {
+				return term
+			}
 		}
-	}
 
-	// 3)
-	vocabVal, containsVocab := c.values["@vocab"]
-	if relativeToVocab && containsVocab {
-		// determine if vocab is a prefix of the iri
-		vocab := vocabVal.(string)
-		// 3.1)
-		if strings.HasPrefix(iri, vocab) && iri != vocab {
-			// use suffix as relative iri if it is not a term in the
-			// active context
-			suffix := iri[len(vocab):]
-			if _, hasSuffix := c.termDefinitions[suffix]; !hasSuffix {
-				return suffix
+		// 3)
+		if vocabVal, containsVocab := c.values["@vocab"]; containsVocab {
+			// determine if vocab is a prefix of the iri
+			vocab := vocabVal.(string)
+			// 3.1)
+			if strings.HasPrefix(iri, vocab) && iri != vocab {
+				// use suffix as relative iri if it is not a term in the
+				// active context
+				suffix := iri[len(vocab):]
+				if _, hasSuffix := c.termDefinitions[suffix]; !hasSuffix {
+					return suffix
+				}
 			}
 		}
 	}
@@ -689,19 +702,18 @@ func (c *Context) CompactIri(iri string, value interface{}, relativeToVocab bool
 	compactIRI := ""
 
 	// 5)
-	for _, term := range GetKeys(c.termDefinitions) {
-		termDefinitionVal := c.termDefinitions[term]
+	for term, termDefinitionVal := range c.termDefinitions {
 		if termDefinitionVal == nil {
 			continue
 		}
-
-		termDefinition := termDefinitionVal.(map[string]interface{})
 
 		// 5.1)
 		if strings.Contains(term, ":") {
 			continue
 		}
+
 		// 5.2)
+		termDefinition := termDefinitionVal.(map[string]interface{})
 		idStr := termDefinition["@id"].(string)
 		if iri == idStr || !strings.HasPrefix(iri, idStr) {
 			continue
