@@ -10,6 +10,7 @@ func main() {
 	proc := ld.NewJsonLdProcessor()
 	options := ld.NewJsonLdOptions("")
 	options.Format = "application/nquads"
+	options.Algorithm = "URDNA2015"
 
 	doc := map[string]interface{}{
 		"@context": map[string]interface{}{

@@ -155,6 +155,18 @@ func (ms *MockServer) Close() {
 	}
 }
 
+type TestDefinition struct {
+	Id               string
+	Name             string
+	Type             string
+	EvaluationType   string
+	InputURL         string
+	InputFileName    string
+	ExpectedFileName string
+	Option           map[string]interface{}
+	Raw              map[string]interface{}
+}
+
 func TestSuite(t *testing.T) {
 	testDir := "testdata"
 	fileInfoList, err := ioutil.ReadDir(testDir)
@@ -180,26 +192,69 @@ func TestSuite(t *testing.T) {
 	earlReport := NewEarlReport()
 
 	for manifestName, manifest := range manifestMap {
-		manifestURI := manifest["baseIri"].(string) + manifestName
+		baseIri := ""
+		testListKey := "entries"
+		if baseValue, hasBase := manifest["baseIri"]; hasBase {
+			baseIri = baseValue.(string)
+			// it must be a JSON-LD test manifest
+			testListKey = "sequence"
+		}
+		manifestURI := baseIri + manifestName
 
 		// start a mock HTTP server
-		mockServer := NewMockServer(manifest["baseIri"].(string), testDir)
+		mockServer := NewMockServer(baseIri, testDir)
 		defer mockServer.Close()
 
-	SequenceLoop:
-		for _, testData := range manifest["sequence"].([]interface{}) {
+		testList := make([]*TestDefinition, 0)
+		for _, testData := range manifest[testListKey].([]interface{}) {
 			testMap := testData.(map[string]interface{})
-			testName := manifestURI + testMap["@id"].(string)
-
-			// ToRDF tests with a reference to RFC3986 don't agree with Go implementation of RFC 3986
-			// (see url.URL.ResolveReference(). Skipping for now, as other JSON-LD implementations do.
-			purpose := testMap["purpose"]
-			if purpose != nil && strings.Contains(purpose.(string), "RFC3986") {
-				log.Println("Skipping RFC3986 test", testMap["@id"], ":", testMap["name"])
-				continue
+			testId := ""
+			testType := ""
+			testEvaluationType := "jld:PositiveEvaluationTest"
+			inputURL := ""
+			inputFileName := ""
+			expectedFileName := ""
+			if baseIri != "" {
+				// JSON-LD test manifest
+				testId = testMap["@id"].(string)
+				testType = testMap["@type"].([]interface{})[1].(string)
+				testEvaluationType = testMap["@type"].([]interface{})[0].(string)
+				inputURL = baseIri + testMap["input"].(string)
+				inputFileName = testMap["input"].(string)
+				expectedFileName = testMap["expect"].(string)
+			} else {
+				// Normalisation test manifest
+				testId = testMap["id"].(string)
+				testType = testMap["type"].(string)
+				inputFileName = testMap["action"].(string)
+				expectedFileName = testMap["result"].(string)
 			}
 
-			inputURL := manifest["baseIri"].(string) + testMap["input"].(string)
+			td := &TestDefinition{
+				Id:               testId,
+				Name:             manifestURI + testId,
+				Type:             testType,
+				EvaluationType:   testEvaluationType,
+				InputURL:         inputURL,
+				InputFileName:    filepath.Join(testDir, inputFileName),
+				ExpectedFileName: filepath.Join(testDir, expectedFileName),
+				Raw:              testMap,
+			}
+			if optionVal, optionsPresent := testMap["option"]; optionsPresent {
+				td.Option = optionVal.(map[string]interface{})
+			}
+			testList = append(testList, td)
+		}
+
+	SequenceLoop:
+		for _, td := range testList {
+			// ToRDF tests with a reference to RFC3986 don't agree with Go implementation of RFC 3986
+			// (see url.URL.ResolveReference(). Skipping for now, as other JSON-LD implementations do.
+			purpose := td.Raw["purpose"]
+			if purpose != nil && strings.Contains(purpose.(string), "RFC3986") {
+				log.Println("Skipping RFC3986 test", td.Id, ":", td.Name)
+				continue
+			}
 
 			// read 'option' section and initialise JsonLdOptions and expected HTTP server responses
 
@@ -210,8 +265,8 @@ func TestSuite(t *testing.T) {
 			var returnRedirectTo string
 			var returnHttpLink []string
 
-			if optionVal, optionsPresent := testMap["option"]; optionsPresent {
-				testOpts := optionVal.(map[string]interface{})
+			if td.Option != nil {
+				testOpts := td.Option
 
 				if value, hasValue := testOpts["specVersion"]; hasValue {
 					// this library supports JSON-LD 1.0 spec only
@@ -277,63 +332,70 @@ func TestSuite(t *testing.T) {
 			var result interface{}
 			var opError error
 
-			testType := testMap["@type"].([]interface{})
+			switch td.Type {
+			case "jld:ExpandTest":
+				log.Println("Running Expand test", td.Id, ":", td.Name)
+				result, opError = proc.Expand(td.InputURL, options)
+			case "jld:CompactTest":
+				log.Println("Running Compact test", td.Id, ":", td.Name)
 
-			switch {
-			case testType[1] == "jld:ExpandTest":
-				log.Println("Running Expand test", testMap["@id"], ":", testMap["name"])
-				result, opError = proc.Expand(inputURL, options)
-			case testType[1] == "jld:CompactTest":
-				log.Println("Running Compact test", testMap["@id"], ":", testMap["name"])
-
-				contextFilename := testMap["context"].(string)
+				contextFilename := td.Raw["context"].(string)
 				contextDoc, err := dl.LoadDocument(filepath.Join(testDir, contextFilename))
 				assert.NoError(t, err)
 
-				result, opError = proc.Compact(inputURL, contextDoc.Document, options)
-			case testType[1] == "jld:FlattenTest":
-				log.Println("Running Flatten test", testMap["@id"], ":", testMap["name"])
+				result, opError = proc.Compact(td.InputURL, contextDoc.Document, options)
+			case "jld:FlattenTest":
+				log.Println("Running Flatten test", td.Id, ":", td.Name)
 
 				var ctxDoc interface{}
-				if ctxVal, hasContext := testMap["context"]; hasContext {
+				if ctxVal, hasContext := td.Raw["context"]; hasContext {
 					contextFilename := ctxVal.(string)
 					contextDoc, err := dl.LoadDocument(filepath.Join(testDir, contextFilename))
 					assert.NoError(t, err)
 					ctxDoc = contextDoc.Document
 				}
 
-				result, opError = proc.Flatten(inputURL, ctxDoc, options)
-			case testType[1] == "jld:FrameTest":
-				log.Println("Running Frame test", testMap["@id"], ":", testMap["name"])
+				result, opError = proc.Flatten(td.InputURL, ctxDoc, options)
+			case "jld:FrameTest":
+				log.Println("Running Frame test", td.Id, ":", td.Name)
 
-				frameFilename := testMap["frame"].(string)
+				frameFilename := td.Raw["frame"].(string)
 				frameDoc, err := dl.LoadDocument(filepath.Join(testDir, frameFilename))
 				assert.NoError(t, err)
 
-				result, opError = proc.Frame(inputURL, frameDoc.Document, options)
-			case testType[1] == "jld:FromRDFTest":
-				log.Println("Running FromRDF test", testMap["@id"], ":", testMap["name"])
+				result, opError = proc.Frame(td.InputURL, frameDoc.Document, options)
+			case "jld:FromRDFTest":
+				log.Println("Running FromRDF test", td.Id, ":", td.Name)
 
-				inputFilename := filepath.Join(testDir, testMap["input"].(string))
-				inputBytes, err := ioutil.ReadFile(inputFilename)
+				inputBytes, err := ioutil.ReadFile(td.InputFileName)
 				assert.NoError(t, err)
 				input := string(inputBytes)
 
 				result, err = proc.FromRDF(input, options)
-			case testType[1] == "jld:ToRDFTest":
-				log.Println("Running ToRDF test", testMap["@id"], ":", testMap["name"])
+			case "jld:ToRDFTest":
+				log.Println("Running ToRDF test", td.Id, ":", td.Name)
 
 				options.Format = "application/nquads"
-				result, opError = proc.ToRDF(inputURL, options)
-			case testType[1] == "jld:NormalizeTest":
-				log.Println("Running Normalize test", testMap["@id"], ":", testMap["name"])
+				result, opError = proc.ToRDF(td.InputURL, options)
+			case "rdfn:Urgna2012EvalTest":
+				log.Println("Running URGNA2012 test", td.Id, ":", td.Name)
 
-				inputFilename := filepath.Join(testDir, testMap["input"].(string))
-				rdIn, err := dl.LoadDocument(inputFilename)
+				inputBytes, err := ioutil.ReadFile(td.InputFileName)
 				assert.NoError(t, err)
-				input := rdIn.Document
-
+				input := string(inputBytes)
+				options.InputFormat = "application/nquads"
 				options.Format = "application/nquads"
+				options.Algorithm = "URGNA2012"
+				result, opError = proc.Normalize(input, options)
+			case "rdfn:Urdna2015EvalTest":
+				log.Println("Running URDNA2015 test", td.Id, ":", td.Name)
+
+				inputBytes, err := ioutil.ReadFile(td.InputFileName)
+				assert.NoError(t, err)
+				input := string(inputBytes)
+				options.InputFormat = "application/nquads"
+				options.Format = "application/nquads"
+				options.Algorithm = "URDNA2015"
 				result, opError = proc.Normalize(input, options)
 			default:
 				break SequenceLoop
@@ -341,23 +403,22 @@ func TestSuite(t *testing.T) {
 
 			var expected interface{}
 			var expectedType string
-			if testType[0] == "jld:PositiveEvaluationTest" {
+			if td.EvaluationType == "jld:PositiveEvaluationTest" {
 				// we don't expect any errors here
 				if !assert.NoError(t, opError) {
-					earlReport.addAssertion(testName, false)
+					earlReport.addAssertion(td.Name, false)
 				}
 
 				// load expected document
-				expectedFilename := filepath.Join(testDir, testMap["expect"].(string))
-				expectedType = filepath.Ext(expectedFilename)
+				expectedType = filepath.Ext(td.ExpectedFileName)
 				if expectedType == ".jsonld" || expectedType == ".json" {
 					// load as JSON-LD/JSON
-					rdOut, err := dl.LoadDocument(filepath.Join(testDir, testMap["expect"].(string)))
+					rdOut, err := dl.LoadDocument(td.ExpectedFileName)
 					assert.NoError(t, err)
 					expected = rdOut.Document
 				} else if expectedType == ".nq" {
 					// load as N-Quads
-					expectedBytes, err := ioutil.ReadFile(expectedFilename)
+					expectedBytes, err := ioutil.ReadFile(td.ExpectedFileName)
 					assert.NoError(t, err)
 					expected = string(expectedBytes)
 				}
@@ -365,8 +426,8 @@ func TestSuite(t *testing.T) {
 				// marshal/unmarshal the result to avoid any differences due to formatting & key sequences
 				resultBytes, _ := json.MarshalIndent(result, "", "  ")
 				err = json.Unmarshal(resultBytes, &result)
-			} else if testType[0] == "jld:NegativeEvaluationTest" {
-				expected = testMap["expect"].(string)
+			} else if td.EvaluationType == "jld:NegativeEvaluationTest" {
+				expected = td.Raw["expect"].(string)
 
 				if opError != nil {
 					result = string(opError.(*JsonLdError).Code)
@@ -400,11 +461,11 @@ func TestSuite(t *testing.T) {
 					os.Stdout.WriteString(expected.(string))
 					os.Stdout.WriteString("\n")
 				}
-				log.Println("Error when running", testMap["@id"], "for", testType[1])
-				earlReport.addAssertion(testName, false)
+				log.Println("Error when running", td.Id, "for", td.Type)
+				earlReport.addAssertion(td.Name, false)
 				return
 			} else {
-				earlReport.addAssertion(testName, true)
+				earlReport.addAssertion(td.Name, true)
 			}
 		}
 	}

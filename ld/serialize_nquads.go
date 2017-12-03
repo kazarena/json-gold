@@ -27,7 +27,7 @@ func (s *NQuadRDFSerializer) SerializeTo(w io.Writer, dataset *RDFDataset) error
 			graphName = ""
 		}
 		for _, triple := range triples {
-			quads = append(quads, toNQuad(triple, graphName, ""))
+			quads = append(quads, toNQuad(triple, graphName))
 		}
 	}
 	sort.Strings(quads)
@@ -48,7 +48,7 @@ func (s *NQuadRDFSerializer) Serialize(dataset *RDFDataset) (interface{}, error)
 	return buf.String(), nil
 }
 
-func toNQuad(triple *Quad, graphName string, bnode string) string {
+func toNQuad(triple *Quad, graphName string) string {
 
 	s := triple.Subject
 	p := triple.Predicate
@@ -59,23 +59,13 @@ func toNQuad(triple *Quad, graphName string, bnode string) string {
 	// subject is an IRI or bnode
 	if IsIRI(s) {
 		quad += "<" + escape(s.GetValue()) + ">"
-	} else if bnode != "" {
-		// normalization mode
-		if bnode == s.GetValue() {
-			quad += "_:a"
-		} else {
-			quad += "_:z"
-		}
 	} else {
-		// normal mode
 		quad += s.GetValue()
 	}
 
 	if IsIRI(p) {
 		quad += " <" + escape(p.GetValue()) + "> "
 	} else {
-		// otherwise it must be a bnode (TODO: can we only allow this if the
-		// flag is set in options?)
 		quad += " " + escape(p.GetValue()) + " "
 	}
 
@@ -83,17 +73,7 @@ func toNQuad(triple *Quad, graphName string, bnode string) string {
 	if IsIRI(o) {
 		quad += "<" + escape(o.GetValue()) + ">"
 	} else if IsBlankNode(o) {
-		// normalization mode
-		if bnode != "" {
-			if bnode == o.GetValue() {
-				quad += "_:a"
-			} else {
-				quad += "_:z"
-			}
-		} else {
-			// normal mode
-			quad += o.GetValue()
-		}
+		quad += o.GetValue()
 	} else {
 		literal := o.(*Literal)
 		escaped := escape(literal.GetValue())
@@ -109,8 +89,6 @@ func toNQuad(triple *Quad, graphName string, bnode string) string {
 	if graphName != "" {
 		if strings.Index(graphName, "_:") != 0 {
 			quad += " <" + escape(graphName) + ">"
-		} else if bnode != "" {
-			quad += " _:g"
 		} else {
 			quad += " " + graphName
 		}

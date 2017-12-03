@@ -58,13 +58,13 @@ func NewFramingContext(opts *JsonLdOptions) *FramingContext {
 //
 // Returns the framed output.
 func (api *JsonLdApi) Frame(input interface{}, frame []interface{}, opts *JsonLdOptions) ([]interface{}, error) {
-	idGen := NewBlankNodeIDGenerator()
+	issuer := NewIdentifierIssuer("_:b")
 
 	// create framing state
 	state := NewFramingContext(opts)
 
 	nodes := make(map[string]interface{})
-	api.GenerateNodeMap(input, nodes, "@default", nil, "", nil, idGen)
+	api.GenerateNodeMap(input, nodes, "@default", nil, "", nil, issuer)
 	nodeMap := nodes["@default"].(map[string]interface{})
 
 	framed := make([]interface{}, 0)

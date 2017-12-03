@@ -2,17 +2,42 @@ package ld
 
 import (
 	"crypto/sha1"
+	"crypto/sha256"
+	hashPkg "hash"
 	"sort"
 	"strings"
 )
 
-// Normalize performs RDF normalization on the given JSON-LD input.
-// dataset: the expanded JSON-LD object to normalize.
-// Returns the normalized JSON-LD object.
 func (api *JsonLdApi) Normalize(dataset *RDFDataset, opts *JsonLdOptions) (interface{}, error) {
-	// create quads and map bnodes to their associated quads
-	quads := make([]*Quad, 0)
-	bnodes := make(map[string]interface{})
+	algo := NewNormalisationAlgorithm(opts.Algorithm)
+	return algo.Main(dataset, opts)
+}
+
+var (
+	Positions = []string{"s", "o", "g"}
+)
+
+type NormalisationAlgorithm struct {
+	blankNodeInfo    map[string]map[string]interface{}
+	hashToBlankNodes map[string][]string
+	canonicalIssuer  *IdentifierIssuer
+	quads            []*Quad
+	version          string
+}
+
+func NewNormalisationAlgorithm(version string) *NormalisationAlgorithm {
+	return &NormalisationAlgorithm{
+		blankNodeInfo:   make(map[string]map[string]interface{}),
+		canonicalIssuer: NewIdentifierIssuer("_:c14n"),
+		quads:           make([]*Quad, 0),
+		version:         version,
+	}
+}
+
+func (na *NormalisationAlgorithm) Main(dataset *RDFDataset, opts *JsonLdOptions) (interface{}, error) {
+	// 1) Create the normalisation state
+
+	// 2) For every quad in input dataset:
 	for graphName, triples := range dataset.Graphs {
 		if graphName == "@default" {
 			graphName = ""
@@ -26,450 +51,574 @@ func (api *JsonLdApi) Normalize(dataset *RDFDataset, opts *JsonLdOptions) (inter
 				}
 			}
 
-			quads = append(quads, quad)
+			na.quads = append(na.quads, quad)
 
+			// 2.1) For each blank node that occurs in the quad, add
+			// a reference to the quad using the blank node identifier
+			// in the blank node to quads map, creating a new entry if necessary.
 			for _, attrNode := range []Node{quad.Subject, quad.Object, quad.Graph} {
 				if attrNode != nil {
 					if IsBlankNode(attrNode) {
 						id := attrNode.GetValue()
-						if _, hasID := bnodes[id]; !hasID {
-							bnodes[id] = map[string]interface{}{
+						bNodeInfo, hasID := na.blankNodeInfo[id]
+						if !hasID {
+							bNodeInfo = map[string]interface{}{
 								"quads": make([]*Quad, 0),
 							}
+							na.blankNodeInfo[id] = bNodeInfo
 						}
-						quadsList := bnodes[id].(map[string]interface{})["quads"].([]*Quad)
-						bnodes[id].(map[string]interface{})["quads"] = append(quadsList, quad)
+						bNodeInfo["quads"] = append(bNodeInfo["quads"].([]*Quad), quad)
 					}
 				}
 			}
 		}
 	}
 
-	// mapping complete, start canonical naming
-	normalizeUtils := NewNormalizeUtils(quads, bnodes, NewUniqueNamer("_:c14n"), opts.Format)
-
-	return normalizeUtils.HashBlankNodes(GetKeys(bnodes))
-}
-
-// NormalizeUtils keeps the state of the Normalisation process
-type NormalizeUtils struct {
-	namer  *UniqueNamer
-	bnodes map[string]interface{}
-	quads  []*Quad
-	format string
-}
-
-// NewNormalizeUtils creates a new instance of NormalizeUtils
-func NewNormalizeUtils(quads []*Quad, bnodes map[string]interface{}, namer *UniqueNamer,
-	format string) *NormalizeUtils {
-	nu := &NormalizeUtils{
-		format: format,
-		quads:  quads,
-		bnodes: bnodes,
-		namer:  namer,
+	// 3) Create a list of non-normalized blank node identifiers and
+	// populate it using the keys from the blank node to quads map.
+	nonNormalized := make(map[string]bool)
+	for id := range na.blankNodeInfo {
+		nonNormalized[id] = true
 	}
-	return nu
-}
 
-// HashBlankNodes generates unique and duplicate hashes for bnodes
-func (nu *NormalizeUtils) HashBlankNodes(unnamed []string) (interface{}, error) {
-	nextUnnamed := make([]string, 0)
-	duplicates := make(map[string][]string)
-	unique := make(map[string]string)
+	// 4) Initialize simple, a boolean flag, to true.
+	simple := true
 
-	// NOTE: not using the same structure as javascript here to avoid
-	// possible stack overflows
-	// hash quads for each unnamed bnode
-	for hui := 0; ; hui++ {
+	// 5) While simple is true, issue canonical identifiers for blank nodes:
+	for simple {
+		// 5.1) Set simple to false.
+		simple = false
 
-		if hui == len(unnamed) {
-			// done, name blank nodes
-			named := false
-			hashes := GetKeysString(unique)
-			sort.Strings(hashes)
+		// 5.2) Clear hash to blank nodes map.
+		na.hashToBlankNodes = make(map[string][]string)
 
-			for _, hash := range hashes {
-				bnode := unique[hash]
-				nu.namer.GetName(bnode)
-				named = true
+		// 5.3) For each blank node identifier in non-normalized identifiers:
+		for id := range nonNormalized {
+			// 5.3.1) Create a hash, hash, according to the Hash First Degree Quads algorithm.
+			hash := na.hashFirstDegreeQuads(id)
+
+			// 5.3.2) Add hash and identifier to hash to blank nodes map,
+			// creating a new entry if necessary.
+			bNodeList, hasList := na.hashToBlankNodes[hash]
+			if !hasList {
+				bNodeList = make([]string, 0)
+
 			}
+			na.hashToBlankNodes[hash] = append(bNodeList, id)
+		}
 
-			// continue to hash bnodes if a bnode was assigned a name
-			if named {
-				// this resets the initial variables, so it seems like it
-				// has to go on the stack
-				// but since this is the end of the function either way, it
-				// might not have to
-				// hashBlankNodes(unnamed);
-				hui = -1
-				unnamed = nextUnnamed
-				nextUnnamed = make([]string, 0)
-				duplicates = make(map[string][]string)
-				unique = make(map[string]string)
+		// 5.4) For each hash to identifier list mapping in hash to blank
+		// nodes map, lexicographically-sorted by hash:
+		sortedHashes := make([]string, len(na.hashToBlankNodes))
+		i := 0
+		for key := range na.hashToBlankNodes {
+			sortedHashes[i] = key
+			i++
+		}
+		sort.Strings(sortedHashes)
+		for _, hash := range sortedHashes {
+			idList := na.hashToBlankNodes[hash]
+			// 5.4.1) If the length of identifier list is greater than 1,
+			// continue to the next mapping.
+			if len(idList) > 1 {
 				continue
-			} else { // name the duplicate hash bnods
-				// names duplicate hash bnodes
-				// enumerate duplicate hash groups in sorted order
-				hashes := make([]string, len(duplicates))
-				i := 0
-				for key := range duplicates {
-					hashes[i] = key
-					i++
-				}
-				sort.Strings(hashes)
-
-				// process each group
-				for pgi := 0; ; pgi++ {
-					if pgi == len(hashes) {
-						// done, create JSON-LD array
-						// return createArray();
-						normalized := make([]string, 0)
-
-						// Note: At this point all bnodes in the set of RDF
-						// quads have been
-						// assigned canonical names, which have been stored
-						// in the 'namer' object.
-						// Here each quad is updated by assigning each of
-						// its bnodes its new name
-						// via the 'namer' object
-
-						// update bnode names in each quad and serialize
-						for _, quad := range nu.quads {
-							for _, attrNode := range []Node{quad.Subject, quad.Object, quad.Graph} {
-								if attrNode != nil {
-									attrValue := attrNode.GetValue()
-									if IsBlankNode(attrNode) && strings.Index(attrValue, "_:c14n") != 0 {
-										bn := attrNode.(*BlankNode)
-										bn.Attribute = nu.namer.GetName(attrValue)
-									}
-								}
-							}
-
-							var name string
-							nameVal := quad.Graph
-							if nameVal != nil {
-								name = nameVal.(Node).GetValue()
-							}
-							normalized = append(normalized, toNQuad(quad, name, ""))
-						}
-
-						// sort normalized output
-						sort.Strings(normalized)
-
-						// handle output format
-						if nu.format != "" {
-							// TODO kazarena: review this condition
-							if nu.format == "application/nquads" {
-								rval := ""
-								for _, n := range normalized {
-									rval += n
-								}
-								return rval, nil
-							} else {
-								return nil, NewJsonLdError(UnknownFormat, nu.format)
-							}
-						}
-						rval := ""
-						for _, n := range normalized {
-							rval += n
-						}
-						return ParseNQuads(rval)
-					}
-
-					// name each group member
-					group := duplicates[hashes[pgi]]
-					results := make([]*HashResult, 0)
-					for n := 0; ; n++ {
-						if n == len(group) {
-							// name bnodes in hash order
-							sort.Sort(ByHash(results))
-
-							for _, r := range results {
-								// name all bnodes in path namer in
-								// key-entry order
-								// Note: key-order is preserved in
-								// javascript
-								for _, key := range r.pathNamer.existingOrder {
-									nu.namer.GetName(key)
-								}
-							}
-							// processGroup(i+1);
-							break
-						} else {
-							// skip already-named bnodes
-							bnode := group[n]
-							if nu.namer.IsNamed(bnode) {
-								continue
-							}
-
-							// hash bnode paths
-							pathNamer := NewUniqueNamer("_:b")
-							pathNamer.GetName(bnode)
-
-							result := hashPaths(bnode, nu.bnodes, nu.namer, pathNamer)
-							results = append(results, result)
-						}
-					}
-				}
 			}
-		}
 
-		// hash unnamed bnode
-		bnode := unnamed[hui]
-		hash := hashQuads(bnode, nu.bnodes)
+			// 5.4.2) Use the Issue Identifier algorithm, passing canonical
+			// issuer and the single blank node identifier in identifier
+			// list, identifier, to issue a canonical replacement identifier
+			// for identifier.
+			id := idList[0]
+			na.canonicalIssuer.GetId(id)
 
-		// store hash as unique or a duplicate
-		if dupVal, hasHash := duplicates[hash]; hasHash {
-			duplicates[hash] = append(dupVal, bnode)
-			nextUnnamed = append(nextUnnamed, bnode)
-		} else if uniqueVal, hasHash := unique[hash]; hasHash {
-			duplicates[hash] = []string{
-				uniqueVal,
-				bnode,
-			}
-			nextUnnamed = append(nextUnnamed, uniqueVal, bnode)
-			delete(unique, hash)
-		} else {
-			unique[hash] = bnode
+			// 5.4.3) Remove identifier from non-normalized identifiers.
+			delete(nonNormalized, id)
+
+			// 5.4.4) Remove hash from the hash to blank nodes map.
+			delete(na.hashToBlankNodes, hash)
+
+			// 5.4.5) Set simple to true.
+			simple = true
 		}
 	}
-}
 
-// HashResult
-type HashResult struct {
-	hash      string
-	pathNamer *UniqueNamer
-}
+	// 6) For each hash to identifier list mapping in hash to blank nodes
+	// map, lexicographically-sorted by hash:
+	sortedHashes := make([]string, len(na.hashToBlankNodes))
+	i := 0
+	for key := range na.hashToBlankNodes {
+		sortedHashes[i] = key
+		i++
+	}
+	sort.Strings(sortedHashes)
+	for _, hash := range sortedHashes {
+		idList := na.hashToBlankNodes[hash]
+		// 6.1) Create hash path list where each item will be a result of
+		// running the Hash N-Degree Quads algorithm.
+		hashPaths := make(map[string][]*IdentifierIssuer)
 
-// ByHash helps sorting HashResult by hash
-type ByHash []*HashResult
-
-func (bh ByHash) Len() int {
-	return len(bh)
-}
-func (bh ByHash) Swap(i, j int) {
-	bh[i], bh[j] = bh[j], bh[i]
-}
-func (bh ByHash) Less(i, j int) bool {
-	return bh[i].hash < bh[j].hash
-}
-
-// hashPaths produces a hash for the paths of adjacent bnodes for a bnode,
-// incorporating all information about its subgraph of bnodes. This method
-// will recursively pick adjacent bnode permutations that produce the
-// lexicographically-least 'path' serializations.
-func hashPaths(id string, bnodes map[string]interface{}, namer *UniqueNamer, pathNamer *UniqueNamer) *HashResult {
-	//return nil
-
-	// create SHA-1 digest
-	md := sha1.New()
-
-	groups := make(map[string][]string)
-	groupHashes := make([]string, 0)
-	quads := bnodes[id].(map[string]interface{})["quads"].([]*Quad)
-
-	hpi := 0
-	for ; ; hpi++ {
-		if hpi == len(quads) {
-
-			// done , hash groups
-			groupHashes = make([]string, len(groups))
-			i := 0
-			for key := range groups {
-				groupHashes[i] = key
-				i++
+		// 6.2) For each blank node identifier identifier in identifier list:
+		for _, id := range idList {
+			// 6.2.1) If a canonical identifier has already been issued for
+			// identifier, continue to the next identifier.
+			if na.canonicalIssuer.HasId(id) {
+				continue
 			}
-			sort.Strings(groupHashes)
 
-			for hgi := 0; ; hgi++ {
-				if hgi == len(groupHashes) {
-					res := &HashResult{}
-					res.hash = encodeHex(md.Sum(nil))
-					res.pathNamer = pathNamer
-					return res
-				}
+			// 6.2.2) Create temporary issuer, an identifier issuer
+			// initialized with the prefix _:b.
+			issuer := NewIdentifierIssuer("_:b")
 
-				// digest group hash
-				groupHash := groupHashes[hgi]
-				md.Write([]byte(groupHash))
+			// 6.2.3) Use the Issue Identifier algorithm, passing temporary
+			// issuer and identifier, to issue a new temporary blank node
+			// identifier for identifier.
+			issuer.GetId(id)
 
-				// choose a path and namer from the permutations
-				chosenPath := ""
-				var chosenNamer *UniqueNamer
-
-				permutator := NewPermutator(groups[groupHash])
-				for {
-					contPermutation := false
-					breakOut := false
-					permutation := permutator.Next()
-					pathNamerCopy := pathNamer.Clone()
-
-					// build adjacent path
-					path := ""
-					recurse := make([]string, 0)
-					for _, bnode := range permutation {
-						// use canonical name if available
-						if namer.IsNamed(bnode) {
-							path += namer.GetName(bnode)
-						} else {
-							// recurse if bnode isn't named in the path
-							// yet
-							if !pathNamerCopy.IsNamed(bnode) {
-								recurse = append(recurse, bnode)
-							}
-							path += pathNamerCopy.GetName(bnode)
-						}
-
-						// skip permutation if path is already >= chosen
-						// path
-						if chosenPath != "" && len(path) >= len(chosenPath) && path > chosenPath {
-							if permutator.HasNext() {
-								contPermutation = true
-							} else {
-								// digest chosen path and update namer
-								md.Write([]byte(chosenPath))
-								pathNamer = chosenNamer
-								// hash the nextGroup
-								breakOut = true
-							}
-							break
-						}
-					}
-
-					// if we should do the next permutation
-					if contPermutation {
-						continue
-					}
-					// if we should stop processing this group
-					if breakOut {
-						break
-					}
-
-					// does the next recursion
-					for nrn := 0; ; nrn++ {
-						if nrn == len(recurse) {
-							// return nextPermutation(false);
-							if chosenPath == "" || path < chosenPath {
-								chosenPath = path
-								chosenNamer = pathNamerCopy
-							}
-							if !permutator.HasNext() {
-								// digest chosen path and update namer
-								md.Write([]byte(chosenPath))
-								pathNamer = chosenNamer
-								// hash the nextGroup
-								breakOut = true
-							}
-							break
-						}
-
-						// do recursion
-						bnode := recurse[nrn]
-						result := hashPaths(bnode, bnodes, namer, pathNamerCopy)
-						path += pathNamerCopy.GetName(bnode) + "<" + result.hash + ">"
-						pathNamerCopy = result.pathNamer
-
-						// skip permutation if path is already >= chosen
-						// path
-						if chosenPath != "" && len(path) >= len(chosenPath) && path > chosenPath {
-							if !permutator.HasNext() {
-								// digest chosen path and update namer
-								md.Write([]byte(chosenPath))
-								pathNamer = chosenNamer
-								// hash the nextGroup
-								breakOut = true
-							}
-							break
-						}
-						// do next recursion
-					}
-
-					// if we should stop processing this group
-					if breakOut {
-						break
-					}
-				}
+			// 6.2.4) Run the Hash N-Degree Quads algorithm, passing
+			// temporary issuer, and append the result to the hash path
+			// list.
+			hash, newIssuer := na.hashNDegreeQuads(id, issuer)
+			issuerList, hasList := hashPaths[hash]
+			if !hasList {
+				issuerList = make([]*IdentifierIssuer, 0)
 			}
+			hashPaths[hash] = append(issuerList, newIssuer)
 		}
 
-		// get adjacent bnode
-		quad := quads[hpi]
-		bnode := getAdjacentBlankNodeName(quad.Subject, id)
-		direction := ""
-		if bnode != "" {
-			// normal property
-			direction = "p"
-		} else {
-			bnode = getAdjacentBlankNodeName(quad.Object, id)
-			if bnode != "" {
-				// reverse property
-				direction = "r"
-			}
+		// 6.3) For each result in the hash path list,
+		// lexicographically-sorted by the hash in result:
+		sortedHashes := make([]string, len(hashPaths))
+		i := 0
+		for key := range hashPaths {
+			sortedHashes[i] = key
+			i++
 		}
-
-		if bnode != "" {
-			// get bnode name (try canonical, path, then hash)
-			name := ""
-			if namer.IsNamed(bnode) {
-				name = namer.GetName(bnode)
-			} else if pathNamer.IsNamed(bnode) {
-				name = pathNamer.GetName(bnode)
-			} else {
-				name = hashQuads(bnode, bnodes)
-			}
-
-			// hash direction, property, end bnode name/hash
-			md1 := sha1.New()
-			md1.Write([]byte(direction))
-			md1.Write([]byte(quad.Predicate.GetValue()))
-			md1.Write([]byte(name))
-			groupHash := encodeHex(md1.Sum(nil))
-			if groupVal, present := groups[groupHash]; present {
-				groups[groupHash] = append(groupVal, bnode)
-			} else {
-				groups[groupHash] = []string{bnode}
+		sort.Strings(sortedHashes)
+		for _, hash := range sortedHashes {
+			for _, resultIssuer := range hashPaths[hash] {
+				// 6.3.1) For each blank node identifier, existing identifier,
+				// that was issued a temporary identifier by identifier issuer
+				// in result, issue a canonical identifier, in the same order,
+				// using the Issue Identifier algorithm, passing canonical
+				// issuer and existing identifier.
+				for _, existing := range resultIssuer.existingOrder {
+					na.canonicalIssuer.GetId(existing)
+				}
 			}
 		}
 	}
-}
 
-// hashQuads hashes all of the quads about a blank node.
-// id: the ID of the bnode to hash quads for
-// bnodes: the mapping of bnodes to quads
-func hashQuads(id string, bnodes map[string]interface{}) string {
-	// return cached hash
-	v, _ := bnodes[id]
-	idMap, _ := v.(map[string]interface{})
-	if hashVal, hasHash := idMap["hash"]; hasHash {
-		return hashVal.(string)
-	}
+	// Note: At this point all blank nodes in the set of RDF quads have been
+	// assigned canonical identifiers, which have been stored in the
+	// canonical issuer. Here each quad is updated by assigning each of its
+	// blank nodes its new identifier.
 
-	// serialize all of bnode's quads
-	quads := idMap["quads"].([]*Quad)
-	nquads := make([]string, 0)
-	for _, quad := range quads {
+	// 7) For each quad, quad, in input dataset:
+	normalized := make([]string, 0)
+	for _, quad := range na.quads {
+		// 7.1) Create a copy, quad copy, of quad and replace any existing blank
+		// node identifiers using the canonical identifiers previously issued by
+		// canonical issuer.
+		// Note: We optimize away the copy here.
+		for _, attrNode := range []Node{quad.Subject, quad.Object, quad.Graph} {
+			if attrNode != nil {
+				attrValue := attrNode.GetValue()
+				if IsBlankNode(attrNode) && strings.Index(attrValue, "_:c14n") != 0 {
+					bn := attrNode.(*BlankNode)
+					bn.Attribute = na.canonicalIssuer.GetId(attrValue)
+				}
+			}
+		}
+
+		// 7.2) Add quad copy to the normalized dataset.
 		var name string
-		graphVal := quad.Graph
-		if graphVal != nil {
-			name = graphVal.GetValue()
+		nameVal := quad.Graph
+		if nameVal != nil {
+			name = nameVal.(Node).GetValue()
 		}
-		nquads = append(nquads, toNQuad(quad, name, id))
+		normalized = append(normalized, toNQuad(quad, name))
 	}
-	// sort serialized quads
-	sort.Strings(nquads)
-	// return hashed quads
-	hash := sha1hash(nquads)
-	idMap["hash"] = hash
 
+	// sort normalized output
+	sort.Strings(normalized)
+
+	// 8) Return the normalized dataset.
+	// handle output format
+	if opts.Format != "" {
+		if opts.Format == "application/nquads" {
+			rval := ""
+			for _, n := range normalized {
+				rval += n
+			}
+			return rval, nil
+		} else {
+			return nil, NewJsonLdError(UnknownFormat, opts.Format)
+		}
+	}
+	rval := ""
+	for _, n := range normalized {
+		rval += n
+	}
+	return ParseNQuads(rval)
+}
+
+// 4.6) Hash First Degree Quads
+func (na *NormalisationAlgorithm) hashFirstDegreeQuads(id string) string {
+	// return cached hash
+	info := na.blankNodeInfo[id]
+	if hash, hasHash := info["hash"]; hasHash {
+		return hash.(string)
+	}
+
+	// 1) Initialize nquads to an empty list. It will be used to store quads
+	// in N-Quads format.
+	nquads := make([]string, 0)
+
+	// 2) Get the list of quads associated with the reference blank
+	// node identifier in the blank node to quads map.
+	quads := info["quads"].([]*Quad)
+
+	// 3) For each quad quad in quads:
+	for _, quad := range quads {
+		// 3.1) Serialize the quad in N-Quads format with the following
+		// special rule:
+
+		// 3.1.1) If any component in quad is an blank node, then serialize
+		// it using a special identifier as follows:
+
+		// 3.1.2) If the blank node's existing blank node identifier
+		// matches the reference blank node identifier then use the
+		// blank node identifier _:a, otherwise, use the blank node
+		// identifier _:z.
+		graphCopy := na.modifyFirstDegreeComponent(id, quad.Graph, true)
+		var name string
+		if graphCopy != nil {
+			name = graphCopy.GetValue()
+		}
+
+		quadCopy := NewQuad(
+			na.modifyFirstDegreeComponent(id, quad.Subject, false),
+			quad.Predicate,
+			na.modifyFirstDegreeComponent(id, quad.Object, false),
+			name,
+		)
+
+		nquads = append(nquads, toNQuad(quadCopy, name))
+	}
+
+	// 4) Sort nquads in lexicographical order.
+	sort.Strings(nquads)
+
+	// 5) Return the hash that results from passing the sorted, joined nquads
+	// through the hash algorithm.
+	hash := na.hashNQuads(nquads)
+	info["hash"] = hash
 	return hash
 }
 
-func sha1hash(nquads []string) string {
-	h := sha1.New()
+// helper for modifying component during Hash First Degree Quads
+func (na *NormalisationAlgorithm) modifyFirstDegreeComponent(id string, component Node, isGraph bool) Node {
+	if !IsBlankNode(component) {
+		return component
+	}
+	val := ""
+	if na.version == "URDNA2015" {
+		if component.GetValue() == id {
+			val = "_:a"
+		} else {
+			val = "_:z"
+		}
+	} else {
+		if isGraph {
+			val = "_:g"
+		} else {
+			if component.GetValue() == id {
+				val = "_:a"
+			} else {
+				val = "_:z"
+			}
+		}
+	}
+	return NewBlankNode(val)
+}
+
+//4.7) Hash Related Blank Node
+func (na *NormalisationAlgorithm) hashRelatedBlankNode(related string, quad *Quad, issuer *IdentifierIssuer, position string) string {
+	// 1) Set the identifier to use for related, preferring first the
+	// canonical identifier for related if issued, second the identifier
+	// issued by issuer if issued, and last, if necessary, the result of
+	// the Hash First Degree Quads algorithm, passing related.
+	var id string
+	if na.canonicalIssuer.HasId(related) {
+		id = na.canonicalIssuer.GetId(related)
+	} else if issuer.HasId(related) {
+		id = issuer.GetId(related)
+	} else {
+		id = na.hashFirstDegreeQuads(related)
+	}
+
+	// 2) Initialize a string input to the value of position.
+	// Note: We use a hash object instead.
+	md := na.createHash()
+	md.Write([]byte(position))
+
+	// 3) If position is not g, append <, the value of the predicate in
+	// quad, and > to input.
+	if position != "g" {
+		md.Write([]byte(na.getRelatedPredicate(quad)))
+	}
+
+	// 4) Append identifier to input.
+	md.Write([]byte(id))
+
+	// 5) Return the hash that results from passing input through the hash
+	// algorithm.
+	return encodeHex(md.Sum(nil))
+}
+
+// 4.8) Hash N-Degree Quads
+func (na *NormalisationAlgorithm) hashNDegreeQuads(id string, issuer *IdentifierIssuer) (string, *IdentifierIssuer) {
+	// 1) Create a hash to related blank nodes map for storing hashes that
+	// identify related blank nodes.
+	// Note: 2) and 3) handled within `createHashToRelated`
+	hashToRelated := na.createHashToRelated(id, issuer)
+
+	// 4) Create an empty string, data to hash.
+	// Note: We create a hash object instead.
+	md := na.createHash()
+
+	// 5) For each related hash to blank node list mapping in hash to
+	// related blank nodes map, sorted lexicographically by related hash:
+	sortedHashes := make([]string, len(hashToRelated))
+	i := 0
+	for key := range hashToRelated {
+		sortedHashes[i] = key
+		i++
+	}
+	sort.Strings(sortedHashes)
+	for _, hash := range sortedHashes {
+		blankNodes := hashToRelated[hash]
+		// 5.1) Append the related hash to the data to hash.
+		md.Write([]byte(hash))
+
+		// 5.2) Create a string chosen path.
+		chosenPath := ""
+
+		// 5.3) Create an unset chosen issuer variable.
+		var chosenIssuer *IdentifierIssuer
+
+		// 5.4) For each permutation of blank node list:
+		permutator := NewPermutator(blankNodes)
+		for permutator.HasNext() {
+			permutation := permutator.Next()
+
+			// 5.4.1) Create a copy of issuer, issuer copy.
+			issuerCopy := issuer.Clone()
+
+			// 5.4.2) Create a string path.
+			path := ""
+
+			// 5.4.3) Create a recursion list, to store blank node
+			// identifiers that must be recursively processed by this
+			// algorithm.
+			recursionList := make([]string, 0)
+
+			// 5.4.4) For each related in permutation:
+			skipToNextPermutation := false
+
+			for _, related := range permutation {
+				// 5.4.4.1) If a canonical identifier has been issued for
+				// related, append it to path.
+				if na.canonicalIssuer.HasId(related) {
+					path += na.canonicalIssuer.GetId(related)
+				} else {
+					// 5.4.4.2) Otherwise:
+
+					// 5.4.4.2.1) If issuer copy has not issued an
+					// identifier for related, append related to recursion
+					// list.
+					if !issuerCopy.HasId(related) {
+						recursionList = append(recursionList, related)
+					}
+
+					// 5.4.4.2.2) Use the Issue Identifier algorithm,
+					// passing issuer copy and related and append the result
+					// to path.
+					path += issuerCopy.GetId(related)
+				}
+				// 5.4.4.3) If chosen path is not empty and the length of
+				// path is greater than or equal to the length of chosen
+				// path and path is lexicographically greater than chosen
+				// path, then skip to the next permutation.
+				if len(chosenPath) != 0 && len(path) >= len(chosenPath) && path > chosenPath {
+					skipToNextPermutation = true
+					break
+				}
+			}
+
+			if skipToNextPermutation {
+				continue
+			}
+
+			// 5.4.5) For each related in recursion list:
+			for _, related := range recursionList {
+				// 5.4.5.1) Set result to the result of recursively
+				// executing the Hash N-Degree Quads algorithm, passing
+				// related for identifier and issuer copy for path
+				// identifier issuer.
+				resultHash, resultIssuer := na.hashNDegreeQuads(related, issuerCopy)
+
+				// 5.4.5.2) Use the Issue Identifier algorithm, passing
+				// issuer copy and related and append the result to path.
+				path += issuerCopy.GetId(related)
+
+				// 5.4.5.3) Append <, the hash in result, and > to path.
+				path += "<" + resultHash + ">"
+
+				// 5.4.5.4) Set issuer copy to the identifier issuer in
+				// result.
+				issuerCopy = resultIssuer
+
+				// 5.4.5.5) If chosen path is not empty and the length of
+				// path is greater than or equal to the length of chosen
+				// path and path is lexicographically greater than chosen
+				// path, then skip to the next permutation.
+				if len(chosenPath) != 0 && len(path) >= len(chosenPath) && path > chosenPath {
+					skipToNextPermutation = true
+					break
+				}
+			}
+
+			if skipToNextPermutation {
+				continue
+			}
+
+			// 5.4.6) If chosen path is empty or path is lexicographically
+			// less than chosen path, set chosen path to path and chosen
+			// issuer to issuer copy.
+			if len(chosenPath) == 0 || path < chosenPath {
+				chosenPath = path
+				chosenIssuer = issuerCopy
+			}
+		}
+
+		// 5.5) Append chosen path to data to hash.
+		md.Write([]byte(chosenPath))
+
+		// 5.6) Replace issuer, by reference, with chosen issuer.
+		issuer = chosenIssuer
+	}
+	// 6) Return issuer and the hash that results from passing data to hash
+	// through the hash algorithm.
+	return encodeHex(md.Sum(nil)), issuer
+}
+
+// helper to create appropriate hash object
+func (na *NormalisationAlgorithm) createHash() hashPkg.Hash {
+	if na.version == "URDNA2015" {
+		return sha256.New()
+	} else {
+		return sha1.New()
+	}
+}
+
+// helper to hash a list of nquads
+func (na *NormalisationAlgorithm) hashNQuads(nquads []string) string {
+	h := na.createHash()
 	for _, nquad := range nquads {
 		h.Write([]byte(nquad))
 	}
 	return encodeHex(h.Sum(nil))
+}
+
+// helper for getting a related predicate
+func (na *NormalisationAlgorithm) getRelatedPredicate(quad *Quad) string {
+	if na.version == "URDNA2015" {
+		return "<" + quad.Predicate.GetValue() + ">"
+	} else {
+		return quad.Predicate.GetValue()
+	}
+}
+
+// helper for creating hash to related blank nodes map
+func (na *NormalisationAlgorithm) createHashToRelated(id string, issuer *IdentifierIssuer) map[string][]string {
+	// 1) Create a hash to related blank nodes map for storing hashes that
+	// identify related blank nodes.
+	hashToRelated := make(map[string][]string)
+
+	// 2) Get a reference, quads, to the list of quads in the blank node to
+	// quads map for the key identifier.
+	quads := na.blankNodeInfo[id]["quads"].([]*Quad)
+
+	// 3) For each quad in quads:
+	var related, position string
+	if na.version == "URDNA2015" {
+		for _, quad := range quads {
+			// 3.1) For each component in quad, if component is the subject,
+			// object, and graph name and it is a blank node that is not
+			// identified by identifier:
+			i := 0
+			for _, attrNode := range []Node{quad.Subject, quad.Object, quad.Graph} {
+				if attrNode != nil {
+					attrValue := attrNode.GetValue()
+					if IsBlankNode(attrNode) && attrValue != id {
+						// 3.1.1) Set hash to the result of the Hash Related Blank
+						// Node algorithm, passing the blank node identifier for
+						// component as related, quad, path identifier issuer as
+						// issuer, and position as either s, o, or g based on
+						// whether component is a subject, object, graph name,
+						// respectively.
+						related = attrValue
+						position = Positions[i]
+						hash := na.hashRelatedBlankNode(related, quad, issuer, position)
+
+						// 3.1.2) Add a mapping of hash to the blank node identifier
+						// for component to hash to related blank nodes map, adding
+						// an entry as necessary.
+						relatedList, hasHash := hashToRelated[hash]
+						if !hasHash {
+							relatedList = make([]string, 0)
+						}
+						hashToRelated[hash] = append(relatedList, related)
+					}
+				}
+				i++
+			}
+		}
+	} else {
+		for _, quad := range quads {
+			// 3.1) If the quad's subject is a blank node that does not match
+			// identifier, set hash to the result of the Hash Related Blank Node
+			// algorithm, passing the blank node identifier for subject as
+			// related, quad, path identifier issuer as issuer, and p as
+			// position.
+			if IsBlankNode(quad.Subject) && quad.Subject.GetValue() != id {
+				related = quad.Subject.GetValue()
+				position = "p"
+			} else if IsBlankNode(quad.Object) && quad.Object.GetValue() != id {
+				// 3.2) Otherwise, if quad's object is a blank node that does
+				// not match identifier, to the result of the Hash Related Blank
+				// Node algorithm, passing the blank node identifier for object
+				// as related, quad, path identifier issuer as issuer, and r
+				// as position.
+				related = quad.Object.GetValue()
+				position = "r"
+			} else {
+				continue
+			}
+
+			// 3.4) Add a mapping of hash to the blank node identifier for the
+			// component that matched (subject or object) to hash to related
+			// blank nodes map, adding an entry as necessary.
+			hash := na.hashRelatedBlankNode(related, quad, issuer, position)
+			relatedList, hasHash := hashToRelated[hash]
+			if !hasHash {
+				relatedList = make([]string, 0)
+			}
+			hashToRelated[hash] = append(relatedList, related)
+		}
+	}
+	return hashToRelated
 }
 
 const hexDigit = "0123456789abcdef"
@@ -480,18 +629,6 @@ func encodeHex(data []byte) string {
 		buf = append(buf, hexDigit[b>>4], hexDigit[b&0xf])
 	}
 	return string(buf)
-}
-
-// getAdjacentBlankNodeName is a helper function that gets the blank node name
-// from an RDF quad node (subject or object). If the node is a blank node and
-// its value does not match the given blank node ID, it will be returned.
-func getAdjacentBlankNodeName(node Node, id string) string {
-	nodeValue := node.GetValue()
-	if IsBlankNode(node) && (nodeValue == "" || nodeValue != id) {
-		return nodeValue
-	}
-
-	return ""
 }
 
 // Permutator
