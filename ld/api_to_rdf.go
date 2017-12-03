@@ -2,11 +2,11 @@ package ld
 
 // ToRDF adds RDF triples for each graph in the current node map to an RDF dataset.
 func (api *JsonLdApi) ToRDF(input interface{}, opts *JsonLdOptions) (*RDFDataset, error) {
-	idGen := NewBlankNodeIDGenerator()
+	issuer := NewIdentifierIssuer("_:b")
 
 	nodeMap := make(map[string]interface{})
 	nodeMap["@default"] = make(map[string]interface{})
-	api.GenerateNodeMap(input, nodeMap, "@default", nil, "", nil, idGen)
+	api.GenerateNodeMap(input, nodeMap, "@default", nil, "", nil, issuer)
 
 	dataset := NewRDFDataset()
 
@@ -16,7 +16,7 @@ func (api *JsonLdApi) ToRDF(input interface{}, opts *JsonLdOptions) (*RDFDataset
 			continue
 		}
 		graph := graphVal.(map[string]interface{})
-		dataset.GraphToRDF(graphName, graph, idGen, opts.ProduceGeneralizedRdf)
+		dataset.GraphToRDF(graphName, graph, issuer, opts.ProduceGeneralizedRdf)
 	}
 
 	return dataset, nil

@@ -8,12 +8,12 @@ import (
 // input into a node map.
 func (api *JsonLdApi) GenerateNodeMap(element interface{}, nodeMap map[string]interface{}, activeGraph string,
 	activeSubject interface{}, activeProperty string, list map[string]interface{},
-	idGen *BlankNodeIDGenerator) error {
+	issuer *IdentifierIssuer) error {
 	// 1)
 	if elementList, isList := element.([]interface{}); isList {
 		// 1.1)
 		for _, item := range elementList {
-			if err := api.GenerateNodeMap(item, nodeMap, activeGraph, activeSubject, activeProperty, list, idGen); err != nil {
+			if err := api.GenerateNodeMap(item, nodeMap, activeGraph, activeSubject, activeProperty, list, issuer); err != nil {
 				return err
 			}
 		}
@@ -49,7 +49,7 @@ func (api *JsonLdApi) GenerateNodeMap(element interface{}, nodeMap map[string]in
 		}
 		for _, item := range oldTypes {
 			if strings.HasPrefix(item, "_:") {
-				newTypes = append(newTypes, idGen.GenerateBlankNodeIdentifier(item))
+				newTypes = append(newTypes, issuer.GetId(item))
 			} else {
 				newTypes = append(newTypes, item)
 			}
@@ -75,7 +75,7 @@ func (api *JsonLdApi) GenerateNodeMap(element interface{}, nodeMap map[string]in
 		result := make(map[string]interface{})
 		result["@list"] = make([]interface{}, 0)
 		// 5.2)
-		api.GenerateNodeMap(listVal, nodeMap, activeGraph, activeSubject, activeProperty, result, idGen)
+		api.GenerateNodeMap(listVal, nodeMap, activeGraph, activeSubject, activeProperty, result, issuer)
 		// 5.3)
 		MergeValue(node, activeProperty, result)
 	} else { // 6)
@@ -86,11 +86,11 @@ func (api *JsonLdApi) GenerateNodeMap(element interface{}, nodeMap map[string]in
 
 		if hasID {
 			if strings.HasPrefix(id, "_:") {
-				id = idGen.GenerateBlankNodeIdentifier(id)
+				id = issuer.GetId(id)
 			}
 		} else {
 			// 6.2)
-			id = idGen.GenerateBlankNodeIdentifier("")
+			id = issuer.GetId("")
 		}
 		// 6.3)
 		if _, hasID := graph[id]; !hasID {
@@ -158,7 +158,7 @@ func (api *JsonLdApi) GenerateNodeMap(element interface{}, nodeMap map[string]in
 				// 6.9.3.1)
 				for _, value := range values {
 					// 6.9.3.1.1)
-					api.GenerateNodeMap(value, nodeMap, activeGraph, referencedNode, property, nil, idGen)
+					api.GenerateNodeMap(value, nodeMap, activeGraph, referencedNode, property, nil, issuer)
 				}
 			}
 		}
@@ -166,7 +166,7 @@ func (api *JsonLdApi) GenerateNodeMap(element interface{}, nodeMap map[string]in
 		// 6.10)
 		if graphVal, hasGraph := elem["@graph"]; hasGraph {
 			delete(elem, "@graph")
-			api.GenerateNodeMap(graphVal, nodeMap, id, nil, "", nil, idGen)
+			api.GenerateNodeMap(graphVal, nodeMap, id, nil, "", nil, issuer)
 		}
 
 		// 6.11)
@@ -174,14 +174,14 @@ func (api *JsonLdApi) GenerateNodeMap(element interface{}, nodeMap map[string]in
 			value := elem[property]
 			// 6.11.1)
 			if strings.HasPrefix(property, "_:") {
-				property = idGen.GenerateBlankNodeIdentifier(property)
+				property = issuer.GetId(property)
 			}
 			// 6.11.2)
 			if _, hasProperty := node[property]; !hasProperty {
 				node[property] = make([]interface{}, 0)
 			}
 			// 6.11.3)
-			api.GenerateNodeMap(value, nodeMap, activeGraph, id, property, nil, idGen)
+			api.GenerateNodeMap(value, nodeMap, activeGraph, id, property, nil, issuer)
 		}
 	}
 

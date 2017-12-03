@@ -176,7 +176,7 @@ var rest = NewIRI(RDFRest)
 var nilIRI = NewIRI(RDFNil)
 
 // GraphToRDF creates an array of RDF triples for the given graph.
-func (ds *RDFDataset) GraphToRDF(graphName string, graph map[string]interface{}, idGenerator *BlankNodeIDGenerator,
+func (ds *RDFDataset) GraphToRDF(graphName string, graph map[string]interface{}, issuer *IdentifierIssuer,
 	produceGeneralizedRdf bool) {
 	// 4.2)
 	triples := make([]*Quad, 0)
@@ -233,13 +233,13 @@ func (ds *RDFDataset) GraphToRDF(graphName string, graph map[string]interface{},
 					firstBNode = nilIRI
 					if len(list) > 0 {
 						last = objectToRDF(list[len(list)-1])
-						firstBNode = NewBlankNode(idGenerator.GenerateBlankNodeIdentifier(""))
+						firstBNode = NewBlankNode(issuer.GetId(""))
 					}
 					triples = append(triples, NewQuad(subject, predicate, firstBNode, graphName))
 					for i := 0; i < len(list)-1; i++ {
 						object := objectToRDF(list[i])
 						triples = append(triples, NewQuad(firstBNode, first, object, graphName))
-						restBNode := NewBlankNode(idGenerator.GenerateBlankNodeIdentifier(""))
+						restBNode := NewBlankNode(issuer.GetId(""))
 						triples = append(triples, NewQuad(firstBNode, rest, restBNode, graphName))
 						firstBNode = restBNode
 					}

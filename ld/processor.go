@@ -1,6 +1,7 @@
 package ld
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -185,7 +186,7 @@ func (jldp *JsonLdProcessor) Flatten(input interface{}, context interface{}, opt
 		opts = NewJsonLdOptions("")
 	}
 
-	idGen := NewBlankNodeIDGenerator()
+	issuer := NewIdentifierIssuer("_:b")
 
 	// 2-6) NOTE: these are all the same steps as in expand
 	expanded, err := jldp.expand(input, opts)
@@ -207,7 +208,7 @@ func (jldp *JsonLdProcessor) Flatten(input interface{}, context interface{}, opt
 	nodeMap["@default"] = make(map[string]interface{})
 	// 2)
 	api := NewJsonLdApi()
-	if err = api.GenerateNodeMap(expanded, nodeMap, "@default", nil, "", nil, idGen); err != nil {
+	if err = api.GenerateNodeMap(expanded, nodeMap, "@default", nil, "", nil, issuer); err != nil {
 		return nil, err
 	}
 
@@ -450,24 +451,45 @@ func (jldp *JsonLdProcessor) ToRDF(input interface{}, opts *JsonLdOptions) (inte
 	return dataset, nil
 }
 
-// Normalize performs RDF dataset normalization on the given JSON-LD input.
-// The output is an RDF dataset unless the 'format' option is used.
+// Normalize RDF dataset normalization on the given input. The input is
+// JSON-LD unless the 'inputFormat' option is used. The output is an RDF
+// dataset unless the 'format' option is used.
 func (jldp *JsonLdProcessor) Normalize(input interface{}, opts *JsonLdOptions) (interface{}, error) {
 
 	if opts == nil {
 		opts = NewJsonLdOptions("")
 	}
 
-	toRDFOpts := NewJsonLdOptions(opts.Base)
-	toRDFOpts.Format = ""
-	// it's important to pass the original DocumentLoader. The default one will be used otherwise!
-	toRDFOpts.DocumentLoader = opts.DocumentLoader
-
-	datasetObj, err := jldp.ToRDF(input, toRDFOpts)
-	if err != nil {
-		return nil, err
+	if opts.Algorithm != "URDNA2015" && opts.Algorithm != "URGNA2012" {
+		return nil, NewJsonLdError(InvalidInput, fmt.Sprintf("Unknown normalization algorithm: %s",
+			opts.Algorithm))
 	}
-	dataset := datasetObj.(*RDFDataset)
+
+	var dataset *RDFDataset
+	if opts.InputFormat != "" {
+		if opts.InputFormat != "application/nquads" {
+			return nil, NewJsonLdError(UnknownFormat, "Unknown normalization input format")
+		}
+		serializer, hasSerializer := rdfSerializers[opts.Format]
+		if !hasSerializer {
+			return nil, NewJsonLdError(UnknownFormat, opts.Format)
+		}
+		var err error
+		if dataset, err = serializer.Parse(input); err != nil {
+			return nil, err
+		}
+	} else {
+		toRDFOpts := NewJsonLdOptions(opts.Base)
+		toRDFOpts.Format = ""
+		// it's important to pass the original DocumentLoader. The default one will be used otherwise!
+		toRDFOpts.DocumentLoader = opts.DocumentLoader
+
+		datasetObj, err := jldp.ToRDF(input, toRDFOpts)
+		if err != nil {
+			return nil, err
+		}
+		dataset = datasetObj.(*RDFDataset)
+	}
 
 	api := NewJsonLdApi()
 	return api.Normalize(dataset, opts)

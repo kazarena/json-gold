@@ -1,10 +1,15 @@
 # JSON-goLD
 
-This library is an implementation of the [JSON-LD](http://json-ld.org/) specification in Go.
+This library is an implementation of the [JSON-LD 1.0](http://json-ld.org/) specification in Go.
+It supports both URDNA2015 and URGNA2012 RDF dataset normalisation algorithms.
 
 ## Testing & Compliance ##
 
-As of December 1, 2017 all tests from the [official JSON-LD test suite](https://github.com/json-ld/json-ld.org/tree/master/test-suite) pass. Thanks to httptest Go package, it takes around 230ms to run the whole suite while making live connections to a mock HTTP server.
+As of December 1, 2017:
+
+* all JSON-LD 1.0 tests from the [official JSON-LD test suite](https://github.com/json-ld/json-ld.org/tree/master/test-suite) pass
+* all RDF Dataset Normalisation tests from the [current test suite](https://json-ld.github.io/normalization/tests/index.html) pass
+* JSON-LD 1.1 spec is not currenty supported
 
 ## Inspiration ##
 
@@ -214,6 +219,7 @@ See complete code in [examples/normalize.go](examples/normalize.go).
 proc := ld.NewJsonLdProcessor()
 options := ld.NewJsonLdOptions("")
 options.Format = "application/nquads"
+options.Algorithm = "URDNA2015"
 
 doc := map[string]interface{}{
 	"@context": map[string]interface{}{

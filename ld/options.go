@@ -37,7 +37,9 @@ type JsonLdOptions struct {
 
 	// The following properties aren't in the spec
 
+	InputFormat   string
 	Format        string
+	Algorithm     string
 	UseNamespaces bool
 	OutputForm    string
 }
@@ -55,7 +57,9 @@ func NewJsonLdOptions(base string) *JsonLdOptions {
 		UseRdfType:            false,
 		UseNativeTypes:        false,
 		ProduceGeneralizedRdf: false,
+		InputFormat:           "",
 		Format:                "",
+		Algorithm:             "URGNA2012",
 		UseNamespaces:         false,
 		OutputForm:            "",
 	}
